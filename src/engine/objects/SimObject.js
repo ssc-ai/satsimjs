@@ -1,0 +1,211 @@
+import { ReferenceFrame, Cartesian3, JulianDate, Matrix4, defined, defaultValue, Entity } from "cesium";
+import TransformGroup from "../graph/TransformGroup";
+import Universe from "../Universe";
+
+/**
+ * A base class for all simulation objects.
+ * @extends TransformGroup
+ */
+class SimObject extends TransformGroup {
+  /**
+   * Creates a new SimObject.
+   * @param {string} [name='undefined'] - The name of the object.
+   * @param {ReferenceFrame} [referenceFrame=undefined] - The reference frame of the object.
+   */
+  constructor(name='undefined', referenceFrame=undefined) {
+    super();
+    this._name = name;
+    this._referenceFrame = referenceFrame;
+
+    this._position = new Cartesian3();
+    this._velocity = new Cartesian3();
+
+    this._localToWorldTransform = new Matrix4();
+    this._worldToLocalTransform = new Matrix4();
+
+    this._lastUpdate = new JulianDate();
+    this._lastUniverse = undefined;
+    this._transformDirty = true;
+
+    this._visualizer = {};
+    this._updateListeners = [];
+  }
+
+  /**
+   * The eccentricity of the object's orbit.
+   * @type {number}
+   * @readonly
+   */
+  get eccentricity() {
+    return this._eccentricity;
+  }
+
+  /**
+   * The period of the object's orbit.
+   * @type {number}
+   * @readonly
+   */
+  get period() {
+    return this._period;
+  }
+
+  /**
+   * Sets the visualizer for the object.
+   * @type {Entity}
+   */
+  set visualizer(visualizer) {
+    this._visualizer = visualizer;
+  }
+
+  /**
+   * Gets the visualizer for the object.
+   * @type {Entity}
+   * @readonly
+   */
+  get visualizer() {
+    return this._visualizer;
+  }
+
+  /**
+   * Gets the update listeners for the object.
+   * @type {Array}
+   * @readonly
+   */
+  get updateListeners() {
+    return this._updateListeners;
+  }
+
+  /**
+   * Gets the reference frame of the object.
+   * @type {ReferenceFrame}
+   * @readonly
+   */
+  get referenceFrame() {
+    return defaultValue(this._referenceFrame, defined(this.parent) ? this.parent.referenceFrame : undefined);
+  }
+
+  /**
+   * Gets the position of the object in the Cesium world fixed reference frame.
+   * @type {Cartesian3}
+   * @readonly
+   */
+  get position() {
+    return defined(this._referenceFrame) ? this._position : defined(this.parent) ? this.parent.position : undefined;
+  }
+
+  /**
+   * Gets the velocity of the object in the Cesium world fixed reference frame.
+   * @type {Cartesian3}
+   * @readonly
+   */
+  get velocity() {
+    return defined(this._referenceFrame) ? this._velocity : defined(this._velocity) ? this.parent._velocity : undefined;
+  }
+
+  /**
+   * Gets the time of the last update for the object.
+   * @type {JulianDate}
+   * @readonly
+   */
+  get time() {
+    return this._lastUpdate;
+  }
+
+  /**
+   * Gets the name of the object.
+   * @type {string}
+   * @readonly
+   */
+  get name() {
+    return this._name;
+  }
+
+  /**
+   * Gets the world to local transform matrix for the object.
+   * @type {Matrix4}
+   * @readonly
+   */
+  get worldToLocalTransform() {
+    this._updateTransformsIfDirty()
+    return this._worldToLocalTransform;
+  }
+
+  /**
+   * Gets the local to world transform matrix for the object.
+   * @type {Matrix4}
+   * @readonly
+   */
+  get localToWorldTransform() {
+    this._updateTransformsIfDirty()
+    return this._localToWorldTransform;
+  }
+
+  /**
+   * Gets the world position (ECI) of the object.
+   * @type {Cartesian3}
+   * @readonly
+   */
+  get worldPosition() {
+    if(this._referenceFrame === ReferenceFrame.INERTIAL)
+      return this._position;
+    else
+      return super.worldPosition
+  }
+
+  /**
+   * Updates the object's position, velocity, and orientation.
+   * @param {JulianDate} time - The time to update the object to.
+   * @param {Universe} universe - The universe object.
+   * @param {boolean} [forceUpdate=false] - Whether to force an update.
+   * @param {boolean} [updateParent=true] - Whether to update the parent object.
+   */
+  update(time, universe, forceUpdate = false, updateParent = true) {
+    if (!forceUpdate && JulianDate.equals(time, this._lastUpdate))
+      return;
+
+    if(updateParent && defined(this.parent))
+      this.parent.update(time, universe, forceUpdate, updateParent);
+
+    // override this function to update the position, velocity, and orientation
+    this._update(time, universe);
+
+    // update position (for cesium)
+    this.setTranslation(this._position)
+    
+    // mark transforms dirty
+    this._transformDirty = true;
+    JulianDate.clone(time, this._lastUpdate);
+    this._lastUniverse = universe;
+
+    // update any listeners
+    this._updateListeners.forEach(ul => ul.update(time, universe));
+  }
+
+  /**
+   * Updates the object's world to local and local to world transform matrices if they are dirty.
+   * @private
+   */
+  _updateTransformsIfDirty() {
+    if(this._transformDirty) {
+      if(defined(this.parent) && !this.parent._lastUpdate.equals(this._lastUpdate)) {
+        this.parent.update(this._lastUpdate, this._lastUniverse, true, false);
+      }
+      this._localToWorldTransform = super.localToWorldTransform;
+      Matrix4.inverseTransformation(this._localToWorldTransform, this._worldToLocalTransform);
+      this._transformDirty = false;
+    }
+  }
+
+  /**
+   * Override this function to update the position, velocity, and orientation of the object.
+   * @param {JulianDate} time - The time to update the object to.
+   * @param {Universe} universe - The universe object.
+   * @abstract
+   */
+  _update(time, universe) {
+    throw new Error('SimObject._update must be implemented in derived classes.');
+  }
+
+}
+
+export default SimObject;
