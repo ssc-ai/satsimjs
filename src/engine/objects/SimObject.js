@@ -153,6 +153,87 @@ class SimObject extends TransformGroup {
   }
 
   /**
+   * Rotates this group around the X axis.
+   * @param {Number} angle - The angle to rotate, in radians.
+   * @override
+   */
+  rotateX(angle) {
+    super.rotateX(angle);
+    this._transformDirty = true;
+  }
+
+  /**
+   * Rotates this group around the Y axis.
+   * @param {Number} angle - The angle to rotate, in radians.
+   * @override
+   */
+  rotateY(angle) {
+    super.rotateY(angle);
+    this._transformDirty = true;
+  }
+
+  /**
+   * Rotates this group around the Z axis.
+   * @param {Number} angle - The angle to rotate, in radians.
+   * @override
+   */
+  rotateZ(angle) {
+    super.rotateZ(angle);
+    this._transformDirty = true;
+  }
+
+  /**
+   * Translates this group.
+   * @param {Cartesian3} cartesian3 - The translation vector.
+   * @override
+   */
+  translate(cartesian3) {
+    super.translate(cartesian3);
+    this._transformDirty = true;
+  }
+
+  /**
+   * Sets the translation of this group.
+   * @param {Cartesian3} cartesian3 - The translation vector.
+   * @override
+   */
+  setTranslation(cartesian3) {
+    super.setTranslation(cartesian3);
+    this._transformDirty = true;
+  }
+
+  /**
+   * Sets the rotation of this group.
+   * @param {Matrix3} matrix3 - The rotation matrix.
+   * @override
+   */
+  setRotation(matrix3) {
+    super.setRotation(matrix3);
+    this._transformDirty = true;
+  }
+
+  /**
+   * Sets the columns of this group's transformation matrix.
+   * @param {Cartesian3} x - The X column.
+   * @param {Cartesian3} y - The Y column.
+   * @param {Cartesian3} z - The Z column.
+   * @override
+   */
+  setColumns(x, y, z) {
+    super.setColumns(x, y, z);
+    this._transformDirty = true;
+  }
+
+  /**
+   * Resets this group's transformation matrix to the identity matrix.
+   * @override
+   */
+  reset() {
+    super.reset();
+    this._transformDirty = true;
+  }  
+
+  /**
    * Updates the object's position, velocity, and orientation.
    * @param {JulianDate} time - The time to update the object to.
    * @param {Universe} universe - The universe object.
@@ -172,8 +253,6 @@ class SimObject extends TransformGroup {
     // update position (for cesium)
     this.setTranslation(this._position)
     
-    // mark transforms dirty
-    this._transformDirty = true;
     JulianDate.clone(time, this._lastUpdate);
     this._lastUniverse = universe;
 
