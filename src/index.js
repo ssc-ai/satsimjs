@@ -1,4 +1,4 @@
-globalThis.SATSIM_VERSION = "0.2.1-alpha"
+globalThis.SATSIM_VERSION = "0.2.2-alpha"
 
 export { default as Universe } from './engine/Universe.js'
 
