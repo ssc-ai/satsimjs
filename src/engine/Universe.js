@@ -6,7 +6,7 @@ import ElectroOpicalSensor from "./objects/ElectroOpticalSensor";
 import LagrangeInterpolatedObject from "./objects/LagrangeInterpolatedObject";
 import TwoBodySatellite from "./objects/TwoBodySatellite";
 import SimObject from "./objects/SimObject";
-import { JulianDate } from "cesium";
+import { JulianDate, defined } from "cesium";
 import Gimbal from "./objects/Gimbal";
 
 /**
@@ -93,6 +93,27 @@ class Universe {
       this._nontrackables.push(object);
     }
     return object;
+  }
+
+  /**
+   * Remove an object from the universe.
+   * @param {SimObject} object - The object to remove.
+   */
+  removeObject(object) {
+    if (object.name in this._objects) {
+      delete this._objects[object.name];
+    }
+    const i = this._trackables.indexOf(object);
+    if (i > -1) {
+      this._trackables.splice(i, 1);
+    }
+    const j = this._nontrackables.indexOf(object);
+    if (j > -1) {
+      this._nontrackables.splice(j, 1);
+    }
+    if (defined(object.parent)) {
+      object.parent.removeChild(object);
+    }
   }
 
   /**
