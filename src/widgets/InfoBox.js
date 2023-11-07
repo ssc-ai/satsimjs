@@ -8,7 +8,7 @@ import {
   subscribeAndEvaluate
 } from "cesium";
 import InfoBoxViewModel from "./InfoBoxViewModel.js";
-import "cesium/Build/Cesium/Widgets/InfoBox/InfoBoxDescription.css"
+//import "cesium/Build/Cesium/Widgets/InfoBox/InfoBoxDescription.css" // resium does not work with this line
 
 /**
  * A widget for displaying information or a description.
