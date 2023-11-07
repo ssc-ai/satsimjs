@@ -1,6 +1,7 @@
 import { Universe, createViewer } from "../src/index.js";
 import { Math as CMath, JulianDate, ClockStep } from "cesium";
 import "cesium/Build/Cesium/Widgets/widgets.css";
+import "cesium/Build/Cesium/Widgets/InfoBox/InfoBoxDescription.css"
 import "./index.css";
 
 CMath.setRandomNumberSeed(42);
