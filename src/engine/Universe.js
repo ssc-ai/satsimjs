@@ -6,6 +6,7 @@ import ElectroOpicalSensor from "./objects/ElectroOpticalSensor";
 import LagrangeInterpolatedObject from "./objects/LagrangeInterpolatedObject";
 import TwoBodySatellite from "./objects/TwoBodySatellite";
 import SimObject from "./objects/SimObject";
+import Observatory from "./objects/Observatory";
 import { JulianDate, defined } from "cesium";
 import Gimbal from "./objects/Gimbal";
 
@@ -52,7 +53,7 @@ class Universe {
     this._nontrackables = []
     /**
      * The observatories in the universe.
-     * @type {Array.<{site: SimObject, gimbal: AzElGimbal, sensor: ElectroOpicalSensor}>}
+     * @type {Array.<{Observatory}>}
      * @private
      */
     this._observatories = []
@@ -199,7 +200,7 @@ class Universe {
     this._gimbals.push(gimbal)
     this._sensors.push(sensor)
 
-    const observatory = { site, gimbal, sensor }
+    const observatory = new Observatory(site, gimbal, sensor)
     this._observatories.push(observatory)
 
     return observatory
