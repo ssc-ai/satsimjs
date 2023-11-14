@@ -11,6 +11,13 @@ function Toolbar(container) {
 }
 
 /**
+ * Clears the toolbar.
+ */
+Toolbar.prototype.clear = function () {
+  this._container.innerHTML = "";
+}
+
+/**
  * Adds a separator to the toolbar.
  */
 Toolbar.prototype.addSeparator = function () {
