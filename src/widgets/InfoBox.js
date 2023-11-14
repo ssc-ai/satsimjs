@@ -1,6 +1,7 @@
 import {
   Check,
   Color,
+  Viewer,
   defined,
   destroyObject,
   getElement,
@@ -8,6 +9,8 @@ import {
   subscribeAndEvaluate
 } from "cesium";
 import InfoBoxViewModel from "./InfoBoxViewModel.js";
+import Toolbar from "./Toolbar.js";
+import Universe from "../engine/Universe.js";
 //import "cesium/Build/Cesium/Widgets/InfoBox/InfoBoxDescription.css" // resium does not work with this line
 
 /**
@@ -17,10 +20,12 @@ import InfoBoxViewModel from "./InfoBoxViewModel.js";
  * @constructor
  *
  * @param {Element|string} container The DOM element or ID that will contain the widget.
+ * @param {Viewer} viewer The viewer instance.
+ * @param {Universe} universe The universe instance.
  *
  * @exception {DeveloperError} Element with id "container" does not exist in the document.
  */
-function InfoBox(container) {
+function InfoBox(container, viewer, universe) {
   //>>includeStart('debug', pragmas.debug);
   Check.defined("container", container);
   //>>includeEnd('debug')
@@ -83,6 +88,8 @@ click: function () { closeClicked.raiseEvent(this); }"
   this._frame = frame;
   this._viewModel = viewModel;
   this._descriptionSubscription = undefined;
+  this._viewer = viewer;
+  this._universe = universe;
 
   const that = this;
   //We can't actually add anything into the frame until the load event is fired
@@ -93,6 +100,10 @@ click: function () { closeClicked.raiseEvent(this); }"
   const frameContent = frameDocument.createElement("div");
   frame.appendChild(frameContent);
   frameContent.className = "cesium-infoBox-description";
+  const frameContent2 = frameDocument.createElement("div");
+  frame.appendChild(frameContent2);
+  frameContent2.className = "cesium-infoBox-description";
+  const toolbar = new Toolbar(frameContent2);
 
   //We manually subscribe to the description event rather than through a binding for two reasons.
   //1. It's an easy way to ensure order of operation so that we can adjust the height.
@@ -105,6 +116,10 @@ click: function () { closeClicked.raiseEvent(this); }"
       // Set the frame to small height, force vertical scroll bar to appear, and text to wrap accordingly.
       frame.style.height = "5px";
       frameContent.innerHTML = value;
+
+      // Add the toolbar to the frame
+      toolbar.clear();
+      that._viewer.applyDefaultToolbar(toolbar, that._viewer.selectedEntity);
 
       //If the snippet is a single element, then use its background
       //color for the body of the InfoBox. This makes the padding match
@@ -127,7 +142,7 @@ click: function () { closeClicked.raiseEvent(this); }"
       infoElement.style["background-color"] = background;
 
       // Measure and set the new custom height, based on text wrapped above.
-      const height = frameContent.getBoundingClientRect().height;
+      const height = frameContent.getBoundingClientRect().height + frameContent2.getBoundingClientRect().height;
       frame.style.height = `${height}px`;
     }
   ); 
