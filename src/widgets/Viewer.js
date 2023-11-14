@@ -9,6 +9,7 @@ import ElectroOpicalSensor from "../engine/objects/ElectroOpticalSensor.js"
 import CoverageGridVisualizer from "../engine/cesium/CoverageGridVisualizer.js"
 import SimObject from "../engine/objects/SimObject.js"
 import { CompoundElementVisualizer } from "../index.js"
+import Observatory from "../engine/objects/Observatory.js"
 
 
 /**
@@ -361,8 +362,11 @@ function mixinViewer(viewer, universe, options) {
     const forViz = new SensorFieldOfRegardVisualizer(viewer, site, sensor, universe)
     forViz.show = false
     viewer.sensorForVisualizers.push(forViz)
+    sensor.visualizer.fieldOfRegard = forViz
+
     const fovViz = new SensorFieldOfViewVisualizer(viewer, site, gimbal, sensor, universe)
     viewer.sensorFovVisualizers.push(fovViz)
+    sensor.visualizer.fieldOfView = fovViz
 
     toolbar.addToolbarMenu([
       {
@@ -517,6 +521,29 @@ function mixinViewer(viewer, universe, options) {
   };
 
   /**
+   * Set the default selected toolbar.
+   * @param {Toolbar} toolbar 
+   * @param {Entity} entity
+   */
+  viewer.applyDefaultToolbar = function (toolbar, entity) {
+    if (defined(entity) && defined(entity.simObjectRef)) {
+      const obj = entity.simObjectRef
+      if (obj instanceof Observatory) {
+        toolbar.addToggleButton('Field of Regard', obj.sensor.visualizer.fieldOfRegard.show, (checked) => {
+          obj.sensor.visualizer.fieldOfRegard.show = checked
+        });
+        toolbar.addToggleButton('Field of View', obj.sensor.visualizer.fieldOfView.show, (checked) => {
+          obj.sensor.visualizer.fieldOfView.show = checked
+        });
+      } else if (universe._trackables.includes(obj)) {
+        toolbar.addToggleButton('Path', obj.visualizer.path.show, (checked) => {
+          obj.visualizer.path.show = checked
+        });
+      }
+    }
+  }
+
+  /**
    * Shows or hides the visualizer(s).
    * 
    * @param {CompoundElementVisualizer} visualizer - The visualizer or array of visualizers.
@@ -545,7 +572,7 @@ function mixinViewer(viewer, universe, options) {
     const infoBoxContainer = document.createElement("div");
     infoBoxContainer.className = "cesium-viewer-infoBoxContainer";
     options.infoBox2Container.appendChild(infoBoxContainer);
-    const infoBox = new InfoBox(infoBoxContainer);
+    const infoBox = new InfoBox(infoBoxContainer, viewer, universe);
 
     function trackCallback(infoBoxViewModel) {
       viewer.referenceFrameView = ReferenceFrame.FIXED;
