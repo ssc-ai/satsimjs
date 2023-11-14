@@ -5,7 +5,7 @@ SatSim source code was developed under contract with ARFL/RDSM, and is approved 
 
 ![screenshot](screenshot.jpg "screenshot")
 
-## Installation
+## Installation from NPM
 
 ```sh
 npm install satsim
@@ -39,9 +39,19 @@ index.html
 
 ## Example Webpack Application
 
-````sh
-git clone https://github.com/mixxen/satsimjs-example.git
+```sh
+git clone https://github.com/ssc-ai/satsimjs-example.git
 cd satsimjs-example
 npm install
 npm start
-````
+```
+
+
+## Example NextJS Application
+
+```sh
+git clone https://github.com/ssc-ai/satsimjs-nextjs-example.git
+cd satsimjs-nextjs-example
+npm install
+npm run dev
+```
