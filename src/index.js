@@ -1,4 +1,4 @@
-globalThis.SATSIM_VERSION = "0.2.2-alpha"
+globalThis.SATSIM_VERSION = "0.3.0-alpha"
 
 export { default as Universe } from './engine/Universe.js'
 
@@ -16,6 +16,7 @@ export { default as LagrangeInterpolatedObject } from './engine/objects/Lagrange
 export { default as SGP4Satellite } from './engine/objects/SGP4Satellite.js'
 export { default as SimObject } from './engine/objects/SimObject.js'
 export { default as TwoBodySatellite } from './engine/objects/TwoBodySatellite.js'
+export { default as Observatory } from './engine/objects/Observatory.js'
 
 export { default as CallbackPositionProperty } from './engine/cesium/CallbackPositionProperty.js'
 export { default as CompoundElementVisualizer } from './engine/cesium/CompoundElementVisualizer.js'
