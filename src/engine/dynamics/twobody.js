@@ -4,9 +4,9 @@ import {
 } from './math.js'
 import { Cartesian3 } from 'cesium'
 
-const _scratch = new Cartesian3()
+// const _scratch = new Cartesian3()
 function cross(a, b) {
-  return Cartesian3.cross(a, b, _scratch)
+  return Cartesian3.cross(a, b, new Cartesian3())
 }
 
 function dot(a, b) {
@@ -127,4 +127,65 @@ function rv2p(k, r, v) {
   return 2 * Math.PI / mm
 }
 
-export { vallado, rv2p, rv2ecc }
+
+function rv2coe(k, r, v, tol=1e-8) {
+  const h = cross(r, v)
+  const n = cross(Cartesian3.UNIT_Z, h)
+  const e = mult(sub(mult(r, dot(v, v) - k / mag(r)), mult(v, dot(r, v))), 1/k)
+  const ecc = mag(e)
+  const p = dot(h, h) / k
+  const inc = Math.acos(h.z / mag(h))
+
+  const circular = ecc < tol
+  const equatorial = Math.abs(inc) < tol
+
+  let raan, argp, nu
+
+  if (equatorial && !circular) {
+    raan = 0
+    argp = Math.atan2(e.y, e.x) % (2 * Math.PI)  // Longitude of periapsis
+    nu = Math.atan2(dot(h, cross(e, r)) / mag(h), dot(r, e))
+  } else if (!equatorial && circular) {
+    raan = Math.atan2(n.y, n.x) % (2 * Math.PI)
+    argp = 0
+    // Argument of latitude
+    nu = Math.atan2(dot(r, cross(h, n)) / mag(h), dot(r, n))
+  } else if (equatorial && circular) {
+    raan = 0
+    argp = 0
+    nu = Math.atan2(r.y, r.x) % (2 * Math.PI)  // True longitude
+  } else {
+    const a = p / (1 - (ecc**2))
+    const ka = k * a
+    if (a > 0) {
+      const e_se = dot(r, v) / Math.sqrt(ka)
+      const e_ce = mag(r) * dot(v, v) / k - 1
+      nu = E_to_nu(Math.atan2(e_se, e_ce), ecc)
+    } else {
+      const e_sh = dot(r, v) / Math.sqrt(-ka)
+      const e_ch = mag(r) * (mag(v) ** 2) / k - 1
+      nu = F_to_nu(Math.log((e_ch + e_sh) / (e_ch - e_sh)) / 2, ecc)
+    }
+
+    raan = Math.atan2(n.y, n.x) % (2 * Math.PI)
+    const px = dot(r, n)
+    const py = dot(r, cross(h, n)) / mag(h)
+    argp = (Math.atan2(py, px) - nu) % (2 * Math.PI)
+  }
+
+  nu = (nu + Math.PI) % (2 * Math.PI) - Math.PI
+
+  return [p, ecc, inc, raan, argp, nu]
+}
+
+function E_to_nu(E, ecc) {
+  const nu = 2 * Math.atan(Math.sqrt((1 + ecc) / (1 - ecc)) * Math.tan(E / 2));
+  return nu;
+}
+
+function F_to_nu(F, ecc) {
+  const nu = 2 * Math.atan(Math.sqrt((ecc + 1) / (ecc - 1)) * Math.tanh(F / 2));
+  return nu;
+}
+
+export { vallado, rv2p, rv2ecc, rv2coe }
