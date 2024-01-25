@@ -90,6 +90,7 @@ click: function () { closeClicked.raiseEvent(this); }"
   this._descriptionSubscription = undefined;
   this._viewer = viewer;
   this._universe = universe;
+  this._selectedEntity = undefined;
 
   const that = this;
   //We can't actually add anything into the frame until the load event is fired
@@ -113,13 +114,17 @@ click: function () { closeClicked.raiseEvent(this); }"
     viewModel,
     "description",
     function (value) {
+
       // Set the frame to small height, force vertical scroll bar to appear, and text to wrap accordingly.
       frame.style.height = "5px";
       frameContent.innerHTML = value;
 
       // Add the toolbar to the frame
-      toolbar.clear();
-      that._viewer.applyDefaultToolbar(toolbar, that._viewer.selectedEntity);
+      if(that._viewer.selectedEntity !== that._selectedEntity) {
+        toolbar.clear();
+        that._viewer.applyDefaultToolbar(toolbar, that._viewer.selectedEntity);
+        that._selectedEntity = that._viewer.selectedEntity;
+      }
 
       //If the snippet is a single element, then use its background
       //color for the body of the InfoBox. This makes the padding match
