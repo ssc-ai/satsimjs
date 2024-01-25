@@ -1,4 +1,4 @@
-import { JulianDate, PointPrimitiveCollection, BillboardCollection, Viewer, ImageryLayer, UrlTemplateImageryProvider, IonImageryProvider, defined, Math as CMath, Cartesian2, Cartesian3, Matrix4, Color, SceneMode, ReferenceFrame, defaultValue, PostProcessStage, EntityView, Entity, Clock } from "cesium"
+import { JulianDate, PointPrimitiveCollection, BillboardCollection, LabelCollection, Viewer, ImageryLayer, UrlTemplateImageryProvider, IonImageryProvider, defined, Math as CMath, Cartesian2, Cartesian3, Matrix4, Color, SceneMode, ReferenceFrame, defaultValue, PostProcessStage, EntityView, Entity, Clock } from "cesium"
 import InfoBox from "./InfoBox.js"
 import Toolbar from "./Toolbar.js"
 import SensorFieldOfRegardVisualizer from "../engine/cesium/SensorFieldOfRegardVisualizer.js"
@@ -71,6 +71,7 @@ function mixinViewer(viewer, universe, options) {
   viewer.lastPicked = undefined
   viewer.billboards = scene.primitives.add(new BillboardCollection());
   viewer.points = scene.primitives.add(new PointPrimitiveCollection());
+  viewer.labels = scene.primitives.add(new LabelCollection());
   viewer.coverageVisualizer = new CoverageGridVisualizer(viewer, universe);
 
   viewer.BILLBOARD_SATELLITE = viewer.billboards.add({
@@ -143,9 +144,16 @@ function mixinViewer(viewer, universe, options) {
 
     if(viewer.cameraMode === "up") {
       //note: don't override width and height, makes drillPick super slow
-      const bwidth = scene.context.drawingBufferWidth;
-      const bheight = scene.context.drawingBufferHeight;
+      const bwidth = scene.context.drawingBufferWidth / viewer.resolutionScale;
+      const bheight = scene.context.drawingBufferHeight / viewer.resolutionScale;
+      const aspectRatio = bwidth / bheight;
       let uv = new Cartesian2(windowPosition.x / bwidth * 2.0 - 1.0, windowPosition.y / bheight * 2.0 - 1.0);
+
+      if (aspectRatio > 1.0) { 
+        uv.x *= aspectRatio;
+      } else {
+        uv.y /= aspectRatio;
+      }  
 
       if(Cartesian2.magnitude(uv) >= 1.0) { //don't pick outside the sphere
         return undefined
@@ -342,13 +350,6 @@ function mixinViewer(viewer, universe, options) {
    * @param {Element} lastPicked - The last picked element.
    */
   viewer.objectPickListener = function (picked, lastPicked) {
-    if (defined(lastPicked) && defined(lastPicked.visualizer) && defined(lastPicked.visualizer._path))
-      lastPicked.visualizer._path.show = false
-
-    if (defined(picked) && defined(picked.visualizer) && defined(picked.visualizer._path)) {
-      picked.visualizer._path.show = true
-    }
-      
   }
 
   /**
@@ -480,6 +481,12 @@ function mixinViewer(viewer, universe, options) {
    */
   viewer.setCameraMode = function (mode, sensor) {
 
+    if (mode === "up") {
+      viewer.resolutionScale = 3.0;
+    } else {
+      viewer.resolutionScale = 1.0;
+    }
+
     // save camera position
     if (viewer.cameraMode === "world") {
       originalCameraState = getCameraState();
@@ -517,7 +524,7 @@ function mixinViewer(viewer, universe, options) {
       v.outline = mode === "world";
     });
 
-    viewer.cameraMode = mode;
+    viewer.cameraMode = mode;   
   };
 
   /**
@@ -536,11 +543,38 @@ function mixinViewer(viewer, universe, options) {
           obj.sensor.visualizer.fieldOfView.show = checked
         });
       } else if (universe._trackables.includes(obj)) {
-        toolbar.addToggleButton('Path', obj.visualizer.path.show, (checked) => {
+        toolbar.addToggleButton('Path', obj.visualizer.path.show.getValue(), (checked) => {
           obj.visualizer.path.show = checked
+        });
+        const labelOn = obj.visualizer.label2?.show
+        toolbar.addToggleButton('Label', labelOn, (checked) => {
+
+          // create new point primitive
+          if(!defined(obj.visualizer.label2)) {
+            obj.visualizer.label2 = viewer.labels.add({
+              text: obj.name,
+              font: '14px sans-serif',
+            })
+            obj.visualizer.label2.id = entity  // required for picking
+            obj.visualizer.label2.update = function(time, universe) {
+              obj.visualizer.label2.position = getObjectPositionInCesiumFrame(viewer, universe, obj, time)
+            }
+            obj.updateListeners.push(entity.label2);
+          } else {       
+            obj.visualizer.label2.show = checked
+          }
         });
       }
     }
+  }
+
+  viewer.generateDefaultDynamicDescription = function (entity) {
+    if (defined(entity) && defined(entity.simObjectRef)) {
+      const obj = entity.simObjectRef
+      obj.update(universe.clock.currentTime, universe)
+      return obj.position.toString() + '<br>' + obj.velocity.toString()
+    }
+    return ""
   }
 
   /**
@@ -733,6 +767,7 @@ function mixinViewer(viewer, universe, options) {
 uniform sampler2D colorTexture;
 uniform float fov;
 uniform int mode;
+uniform float aspectRatio;
 in vec2 v_textureCoordinates; // input coord is 0 to +1
 //const float fovTheta = 160.0 * 3.1415926535 / 180.0; // FOV's theta
 const float PI = 3.1415926535;
@@ -745,12 +780,21 @@ void main (void)
     }
 
     vec2 uv = 2.0 * v_textureCoordinates - 1.0; // between -1 and +1
+    vec2 fov2 = vec2(fov, fov);
+    if (aspectRatio > 1.0) { 
+      uv.x *= aspectRatio;
+      // fov2.y /= aspectRatio;
+    } else {
+      uv.y /= aspectRatio;
+      // fov2.x *= aspectRatio;
+    }
     float d = length(uv);
 
     if (d < 0.95) {    
       float z = sqrt(1.0 - uv.x * uv.x - uv.y * uv.y); // sphere eq: r^2 = x^2 + y^2 + z^2
-      float k = 1.0 / (z * tan(fov * 0.5));
-      vec4 c = texture(colorTexture, (uv * k) + 0.5); // between 0 and +1
+      float kx = 1.0 / (z * tan(fov2.x * 0.5));
+      float ky = 1.0 / (z * tan(fov2.y * 0.5));
+      vec4 c = texture(colorTexture, vec2(uv.x * kx, uv.y * ky) + 0.5); // between 0 and +1
       out_FragColor = c;
     } else {
       uv = v_textureCoordinates;
@@ -768,6 +812,9 @@ void main (void)
         },
         mode : function() {
           return viewer.cameraMode === "up" ? 0 : 1;
+        },
+        aspectRatio : function() {
+          return camera.frustum.aspectRatio;
         }
     }
   }));
