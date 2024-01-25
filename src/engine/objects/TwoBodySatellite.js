@@ -3,7 +3,7 @@ import { Cartesian3, JulianDate, ReferenceFrame } from 'cesium'
 import { Math as CMath } from 'cesium'
 import SimObject from './SimObject.js'
 
-const K_KM = CMath.GRAVITATIONALPARAMETER / 1e9
+const K = CMath.GRAVITATIONALPARAMETER
 
 /**
  * Represents a two-body satellite object.
@@ -20,11 +20,12 @@ class TwoBodySatellite extends SimObject {
    */
   constructor(position, velocity, time, orientation, name='TwoBodySatellite') {
     super(name, ReferenceFrame.INERTIAL)
-    const positionKm = Cartesian3.multiplyByScalar(position, 1e-3, new Cartesian3())
-    const velocityKm = Cartesian3.multiplyByScalar(velocity, 1e-3, new Cartesian3())
-    this._epoch = { positionKm, velocityKm, time }
-    this._period = rv2p(K_KM, positionKm, velocityKm)
-    this._eccentricity = rv2ecc(K_KM, positionKm, velocityKm)
+    position = Cartesian3.clone(position)
+    velocity = Cartesian3.clone(velocity)
+    time - JulianDate.clone(time)
+    this._epoch = { position, velocity, time }
+    this._period = rv2p(K, position, velocity)
+    this._eccentricity = rv2ecc(K, position, velocity)
     this.orientation = orientation //TODO
   }
 
@@ -36,10 +37,10 @@ class TwoBodySatellite extends SimObject {
    */
   _update(time, universe) {
     let deltaSec = JulianDate.secondsDifference(time, this._epoch.time)
-    let positionAndVelocity = vallado(K_KM, this._epoch.positionKm, this._epoch.velocityKm, deltaSec, 350)
+    let rv = vallado(K, this._epoch.position, this._epoch.velocity, deltaSec, 350)
 
-    Cartesian3.multiplyByScalar(positionAndVelocity.position, 1000.0, this._position)
-    Cartesian3.multiplyByScalar(positionAndVelocity.velocity, 1000.0, this._velocity)
+    Cartesian3.clone(rv.position, this._position)
+    Cartesian3.clone(rv.velocity, this._velocity)
   }
 }
 
