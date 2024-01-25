@@ -1,4 +1,5 @@
 import Earth from "./objects/Earth";
+import Sun from "./objects/Sun";
 import SGP4Satellite from "./objects/SGP4Satellite";
 import EarthGroundStation from "./objects/EarthGroundStation";
 import AzElGimbal from "./objects/AzElGimbal";
@@ -7,7 +8,7 @@ import LagrangeInterpolatedObject from "./objects/LagrangeInterpolatedObject";
 import TwoBodySatellite from "./objects/TwoBodySatellite";
 import SimObject from "./objects/SimObject";
 import Observatory from "./objects/Observatory";
-import { JulianDate, defined } from "cesium";
+import { Cartesian3, JulianDate, defined } from "cesium";
 import Gimbal from "./objects/Gimbal";
 
 /**
@@ -21,6 +22,12 @@ class Universe {
      * @private
      */
     this._earth = new Earth();
+    /**
+     * The Sun object in the universe.
+     * @type {Sun}
+     * @private
+     */
+    this._sun = new Sun();
     /**
      * The objects in the universe.
      * @type {Object.<string, SimObject>}
@@ -155,8 +162,8 @@ class Universe {
   /**
    * Adds a two-body satellite to the universe.
    * @param {string} name - The name of the satellite.
-   * @param {Vector3} r0 - The initial position vector of the satellite in meters.
-   * @param {Vector3} v0 - The initial velocity vector of the satellite in meters per second.
+   * @param {Cartesian3} r0 - The initial position vector of the satellite in meters.
+   * @param {Cartesian3} v0 - The initial velocity vector of the satellite in meters per second.
    * @param {JulianDate} t0 - The initial time of the satellite.
    * @param {string} orientation - The orientation of the satellite.
    * @param {boolean} [lagrangeInterpolated=false] - Whether the satellite is lagrange interpolated or not.
@@ -215,6 +222,13 @@ class Universe {
   }
 
   /**
+   * Gets the Sun object in the universe.
+   */
+  get sun() {
+    return this._sun;
+  }
+
+  /**
    * Gets the gimbals in the universe.
    * @type {Array.<Gimbal>}
    */
@@ -253,6 +267,7 @@ class Universe {
   update(time) {
     // TODO replace this with graph traversal
     this._earth.update(time, this)
+    this._sun.update(time, this)
     this._nontrackables.forEach((o) => {
       o.update(time, this)
     })
