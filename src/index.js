@@ -1,4 +1,4 @@
-globalThis.SATSIM_VERSION = "0.3.0-alpha"
+globalThis.SATSIM_VERSION = "0.4.0-alpha"
 
 export { default as Universe } from './engine/Universe.js'
 
@@ -31,3 +31,4 @@ export { createViewer, mixinViewer } from './widgets/Viewer.js'
 
 export { fetchTle } from './io/tle.js'
 export { southEastZenithToAzEl, spaceBasedToAzEl } from './engine/dynamics/gimbal.js'
+export { getVisibility } from './engine/geometry/visibility.js'
