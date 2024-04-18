@@ -1,6 +1,6 @@
 import { ReferenceFrame, Cartesian3, JulianDate, Matrix4, defined, defaultValue, Entity } from "cesium";
-import TransformGroup from "../graph/TransformGroup";
-import Universe from "../Universe";
+import TransformGroup from "../graph/TransformGroup.js";
+import Universe from "../Universe.js";
 
 /**
  * A base class for all simulation objects.
@@ -85,7 +85,7 @@ class SimObject extends TransformGroup {
   }
 
   /**
-   * Gets the position of the object in the Cesium world fixed reference frame.
+   * Gets the position of the object.
    * @type {Cartesian3}
    * @readonly
    */
@@ -94,7 +94,7 @@ class SimObject extends TransformGroup {
   }
 
   /**
-   * Gets the velocity of the object in the Cesium world fixed reference frame.
+   * Gets the velocity of the object.
    * @type {Cartesian3}
    * @readonly
    */
@@ -147,9 +147,21 @@ class SimObject extends TransformGroup {
    */
   get worldPosition() {
     if(this._referenceFrame === ReferenceFrame.INERTIAL)
-      return this._position;
+      return this.position;
     else
-      return super.worldPosition
+      return this.transformPointToWorld(Cartesian3.ZERO);
+  }
+
+  /**
+   * Gets the world velocity (ECI) of the object.
+   * @type {Cartesian3}
+   * @readonly
+   */
+  get worldVelocity() {
+    if(this._referenceFrame === ReferenceFrame.INERTIAL)
+      return this._velocity;
+    else
+      return undefined; //TODO
   }
 
   /**
