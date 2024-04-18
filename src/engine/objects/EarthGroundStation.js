@@ -89,6 +89,17 @@ class EarthGroundStation extends SimObject {
   }
 
   /**
+   * Gets the ECI velocity of the ground station.
+   */
+  get worldVelocity() {
+    const EARTH_ANGULAR_SPEED = 7.292115146706979e-5;
+    const vw = new Cartesian3(0, 0, EARTH_ANGULAR_SPEED);
+    const vw_x_r = Cartesian3.cross(vw, this._position, new Cartesian3());
+    return this.parent.transformVectorToWorld(Cartesian3.add(this._velocity, vw_x_r, new Cartesian3()))
+  }
+
+
+  /**
    * Updates the ground station's state.
    * @param {Number} time - The current simulation time in seconds.
    * @param {Universe} universe - The universe in which the ground station exists.
