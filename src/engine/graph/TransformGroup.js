@@ -1,5 +1,5 @@
 import { Matrix3, Matrix4, Cartesian3 } from 'cesium';
-import Group from './Group';
+import Group from './Group.js';
 
 const _scratchMatrix3 = new Matrix3();
 
@@ -116,6 +116,15 @@ class TransformGroup extends Group {
   get transform() {
     return this._transform;
   }
+
+  /**
+   * Returns this group's local transformation matrix.
+   * @type {Matrix4}
+   */
+  get localTransform() {
+    return this._transform.clone();
+  }
+
 
   /**
    * Sets this group's transformation matrix.

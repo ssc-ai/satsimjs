@@ -154,6 +154,17 @@ class Node {
     return Matrix4.IDENTITY.clone()
   }
 
+  /**
+   * Returns this node's local transformation matrix.
+   * @type {Matrix4}
+   */
+  get localTransform() {
+    if (this.parent) {
+      return this.parent.localTransform.clone();
+    } else {
+      return Matrix4.IDENTITY.clone();
+    }
+  }
   
   /**
    * Returns the world position of the node.
