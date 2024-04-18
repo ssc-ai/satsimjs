@@ -1,15 +1,15 @@
-import Earth from "./objects/Earth";
-import Sun from "./objects/Sun";
-import SGP4Satellite from "./objects/SGP4Satellite";
-import EarthGroundStation from "./objects/EarthGroundStation";
-import AzElGimbal from "./objects/AzElGimbal";
-import ElectroOpicalSensor from "./objects/ElectroOpticalSensor";
-import LagrangeInterpolatedObject from "./objects/LagrangeInterpolatedObject";
-import TwoBodySatellite from "./objects/TwoBodySatellite";
-import SimObject from "./objects/SimObject";
-import Observatory from "./objects/Observatory";
+import Earth from "./objects/Earth.js";
+import Sun from "./objects/Sun.js";
+import SGP4Satellite from "./objects/SGP4Satellite.js";
+import EarthGroundStation from "./objects/EarthGroundStation.js";
+import AzElGimbal from "./objects/AzElGimbal.js";
+import ElectroOpicalSensor from "./objects/ElectroOpticalSensor.js";
+import LagrangeInterpolatedObject from "./objects/LagrangeInterpolatedObject.js";
+import TwoBodySatellite from "./objects/TwoBodySatellite.js";
+import SimObject from "./objects/SimObject.js";
+import Observatory from "./objects/Observatory.js";
 import { Cartesian3, JulianDate, defined } from "cesium";
-import Gimbal from "./objects/Gimbal";
+import Gimbal from "./objects/Gimbal.js";
 
 /**
  * Represents a universe containing ECI objects, ground stations, sensors, and gimbals.
@@ -92,7 +92,7 @@ class Universe {
    */
   addObject(object, trackable=true) {
     if (object.name in this._objects) {
-      console.warn(`Object with name ${object.name} already exists in universe`);
+      console.warn(`Object with name ${object.name} already exists in universe: {object}`);
     }
     this._objects[object.name] = object;
     if (trackable) {
@@ -199,16 +199,20 @@ class Universe {
 
     const gimbal = new AzElGimbal(name + ' Gimbal')
     gimbal.attach(site)
+    this.addObject(gimbal, false)
 
     const sensor = new ElectroOpicalSensor(height, width, y_fov, x_fov, field_of_regard, name + ' Sensor')
     sensor.attach(gimbal)
+    this.addObject(sensor, false)
 
     this._objects[name] = site
     this._gimbals.push(gimbal)
+
     this._sensors.push(sensor)
 
     const observatory = new Observatory(site, gimbal, sensor)
     this._observatories.push(observatory)
+
 
     return observatory
   }
@@ -264,20 +268,20 @@ class Universe {
    * Updates the universe to the given time.
    * @param {JulianDate} time - The time to update the universe to.
    */
-  update(time) {
+  update(time, forceUpdate = false) {
     // TODO replace this with graph traversal
-    this._earth.update(time, this)
-    this._sun.update(time, this)
-    this._nontrackables.forEach((o) => {
-      o.update(time, this)
-    })
+    this._earth.update(time, this, forceUpdate)
+    this._sun.update(time, this, forceUpdate)
     this._trackables.forEach((o) => {
-      o.update(time, this)
+      o.update(time, this, forceUpdate)
+    })
+    this._nontrackables.forEach((o) => {
+      o.update(time, this, forceUpdate)
     })
     this._observatories.forEach((o) => {
-      o.site.update(time, this)
-      o.gimbal.update(time, this)
-      o.sensor.update(time, this)
+      o.site.update(time, this, forceUpdate)
+      o.gimbal.update(time, this, forceUpdate)
+      o.sensor.update(time, this, forceUpdate)
     })
   }
 }
