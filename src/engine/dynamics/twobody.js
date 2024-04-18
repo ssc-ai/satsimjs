@@ -1,134 +1,194 @@
-import {
-  stumpff_c2 as c2,
-  stumpff_c3 as c3
-} from './math.js'
 import { Cartesian3 } from 'cesium'
 
-// const _scratch = new Cartesian3()
-function cross(a, b) {
-  return Cartesian3.cross(a, b, new Cartesian3())
-}
+/**
+ * Calculates the c2 and c3 functions for use in the universal variable calculation of z.
+ * @param {number} znew - The z variable.
+ * @returns {Array} An array containing the values of c2 and c3.
+ */
+function findc2c3(znew) {
+  const small = 0.000001;
+  let c2new, c3new;
 
-function dot(a, b) {
-  return Cartesian3.dot(a, b)
-}
-
-function mult(a, b) {
-  return new Cartesian3(a.x * b, a.y * b, a.z * b)
-}
-
-function sub(a, b) {
-  return new Cartesian3(a.x - b.x, a.y - b.y, a.z - b.z)
-}
-
-function mag(a) {
-  return Cartesian3.magnitude(a)
-}
-
-function vallado_fast(k, r0, v0, tof, numiter) {
-  const dot_r0v0 = dot(r0, v0)
-  const norm_r0 = mag(r0)
-  const sqrt_mu = Math.pow(k, 0.5)
-  const alpha = -dot(v0, v0) / k + 2 / norm_r0
-
-  let xi_new
-  // First guess
-  if (alpha > 0) {
-    // Elliptic orbit
-    xi_new = sqrt_mu * tof * alpha
-  } else if (alpha < 0) {
-    // Hyperbolic orbit
-    xi_new = (
-      Math.sign(tof)
-      * Math.pow((-1 / alpha), 0.5)
-      * Math.log(
-        (-2 * k * alpha * tof)
-        / (
-          dot_r0v0
-          + Math.sign(tof)
-          * Math.sqrt(-k / alpha)
-          * (1 - norm_r0 * alpha)
-        )
-      )
-    )
+  if (znew > small) {
+    const sqrtz = Math.sqrt(znew);
+    c2new = (1.0 - Math.cos(sqrtz)) / znew;
+    c3new = (sqrtz - Math.sin(sqrtz)) / Math.pow(sqrtz, 3);
+  } else if (znew < -small) {
+    const sqrtz = Math.sqrt(-znew);
+    c2new = (1.0 - Math.cosh(sqrtz)) / znew;
+    c3new = (Math.sinh(sqrtz) - sqrtz) / Math.pow(sqrtz, 3);
   } else {
-    // Parabolic orbit
-    // (Conservative initial guess)
-    xi_new = sqrt_mu * tof / norm_r0
+    c2new = 0.5;
+    c3new = 1.0 / 6.0;
   }
 
-  // Newton-Raphson iteration on the Kepler equation
-  let xi, psi, c2_psi, c3_psi, norm_r
-  let count = 0
-  while (count < numiter) {
-    xi = xi_new
-    psi = xi * xi * alpha
-    c2_psi = c2(psi)
-    c3_psi = c3(psi)
-    norm_r = (
-      xi * xi * c2_psi
-      + dot_r0v0 / sqrt_mu * xi * (1 - psi * c3_psi)
-      + norm_r0 * (1 - psi * c2_psi)
-    )
-    xi_new = (
-      xi
-      + (
-        sqrt_mu * tof
-        - xi * xi * xi * c3_psi
-        - dot_r0v0 / sqrt_mu * xi * xi * c2_psi
-        - norm_r0 * xi * (1 - psi * c3_psi)
-      )
-      / norm_r
-    )
-    if (Math.abs(xi_new - xi) < 1e-7) {
-      break
+  return [c2new, c3new];
+}
+
+/**
+ * Calculates the position and velocity vectors at a given time using the Vallado algorithm.
+ * Solves keplers problem for orbit determination and returns a future geocentric equatorial
+ * position and velocity vector. The solution uses universal variables.
+ * @param {number} k - The gravitational parameter.
+ * @param {Cartesian3} ro - The initial position.
+ * @param {Cartesian3} vo - The initial velocity.
+ * @param {number} dtseco - The length of time to propagate in seconds.
+ * @param {number} numiter - The maximum number of iterations for convergence.
+ * @returns {Object} An object containing the position and velocity vectors.
+ */
+function vallado(k, ro, vo, dtseco, numiter) {
+  const twopi = Math.PI * 2;
+  const small = 1e-10;          // Assuming a small value for comparisons
+  const infinite = 999999.9;    // Representation of infinity
+  let smu = Math.sqrt(k);
+  let dtsec = dtseco;
+  let ktr = 0;
+  let xold = 0.0;
+  let znew = 0.0;
+  let xnew;
+  let c2new, c3new;
+
+  let r = new Cartesian3();
+  let v = new Cartesian3();
+
+  if (Math.abs(dtseco) > small) {
+    const magro = mag(ro);
+    const magvo = mag(vo);
+    const rdotv = dot(ro, vo);
+    let sme = (magvo ** 2) * 0.5 - (k / magro);
+    let alpha = -sme * 2.0 / k;
+    let a;
+
+    if (Math.abs(sme) > small) {
+      a = -k / (2.0 * sme);
     } else {
-      count += 1
+      a = infinite;
     }
+
+    if (Math.abs(alpha) < small) { // Parabola
+      alpha = 0.0;
+    }
+
+    // Initial guess for x
+    if (alpha >= small) {
+      // Ellipse
+      const period = twopi * Math.sqrt(Math.abs(a) ** 3 / k);
+      if (Math.abs(dtseco) > Math.abs(period)) {
+        dtsec = dtseco % period;
+      }
+      xold = smu * dtsec * alpha;
+    } else if (Math.abs(alpha) < small) {
+      // Parabola
+      const h = cross(ro, vo);
+      const magh = mag(h);
+      const p = magh ** 2 / k;
+      const s = 0.5 * (Math.PI / 2 - Math.atan(3.0 * Math.sqrt(k / (p ** 3)) * dtsec));
+      const w = Math.atan(Math.tan(s) ** (1 / 3));
+      xold = Math.sqrt(p) * (2.0 * cot(2.0 * w));
+      alpha = 0.0;
+    } else {
+      // Hyperbola
+      const temp = -2.0 * k * dtsec / (a * (rdotv + Math.sign(dtsec) * Math.sqrt(-k * a) * (1.0 - magro * alpha)));
+      xold = Math.sign(dtsec) * Math.sqrt(-a) * Math.log(temp);
+    }
+
+    let dtnew = -10.0;
+    let xoldsqrd, rval;
+
+    // Iteration for finding new value for x
+    while ((Math.abs(dtnew / smu - dtsec) >= small) && (ktr < numiter)) {
+      xoldsqrd = xold * xold;
+      znew = xoldsqrd * alpha;
+      [c2new, c3new] = findc2c3(znew);
+
+      rval = xoldsqrd * c2new + rdotv / smu * xold * (1.0 - znew * c3new) + magro * (1.0 - znew * c2new);
+      dtnew = xoldsqrd * xold * c3new + rdotv / smu * xoldsqrd * c2new + magro * xold * (1.0 - znew * c3new);
+
+      // Calculate new value for x
+      const temp1 = (dtsec * smu - dtnew) / rval;
+      xnew = xold + temp1;
+
+      if (xnew < 0.0 && dtsec > 0.0) {
+        xnew = xold * 0.5;
+      }
+
+      ktr++;
+      xold = xnew;
+    }
+
+    if (ktr >= numiter) {
+      console.log('Convergence not reached in ' + numiter + ' iterations');
+    } else {
+      // Calculate position and velocity vectors at new time
+      const xnewsqrd = xnew * xnew;
+      const f = 1.0 - (xnewsqrd * c2new / magro);
+      const g = dtsec - xnewsqrd * xnew * c3new / Math.sqrt(k);
+
+      r.x = f * ro.x + g * vo.x;
+      r.y = f * ro.y + g * vo.y;
+      r.z = f * ro.z + g * vo.z;
+
+      const magr = mag(r);
+      const gdot = 1.0 - (xnewsqrd * c2new / magr);
+      const fdot = (Math.sqrt(k) * xnew / (magro * magr)) * (znew * c3new - 1.0);
+
+      v.x = fdot * ro.x + gdot * vo.x;
+      v.y = fdot * ro.y + gdot * vo.y;
+      v.z = fdot * ro.z + gdot * vo.z;
+    }
+  } else {
+    r = Cartesian3.clone(ro, r);
+    v = Cartesian3.clone(vo, v);
   }
 
-  // Compute Lagrange coefficients
-  const f = 1 - Math.pow(xi, 2) / norm_r0 * c2_psi
-  const g = tof - Math.pow(xi, 3) / sqrt_mu * c3_psi
-
-  const gdot = 1 - Math.pow(xi, 2) / norm_r * c2_psi
-  const fdot = sqrt_mu / (norm_r * norm_r0) * xi * (psi * c3_psi - 1)
-
-  return [f, g, fdot, gdot]
-}
-
-
-function vallado(k, r0, v0, tof, numiter) {
-  // Compute Lagrange coefficients
-  let f, g, fdot, gdot
-  [f, g, fdot, gdot] = vallado_fast(k, r0, v0, tof, numiter)
-
-  // Return position and velocity vectors
   return {
-    "position": { "x": f * r0.x + g * v0.x, "y": f * r0.y + g * v0.y, "z": f * r0.z + g * v0.z},
-    "velocity": { "x": fdot * r0.x + gdot * v0.x, "y": fdot * r0.y + gdot * v0.y, "z": fdot * r0.z + gdot * v0.z}
+    "position": r,
+    "velocity": v
   }
 }
 
+/**
+ * Calculates the eccentricity of an orbit given the gravitational parameter, position, and velocity vectors.
+ * @param {number} k - The gravitational parameter.
+ * @param {Cartesian3} r - The position vector.
+ * @param {Cartesian3} v - The velocity vector.
+ * @returns {number} The eccentricity of the orbit.
+ */
 function rv2ecc(k, r, v) {
   const e = mult(sub(mult(r, dot(v, v) - k / mag(r)), mult(v, dot(r, v))), 1/k)
   const ecc = mag(e)
   return ecc
 }
 
-
-function rv2p(k, r, v) {
+/**
+ * Calculates the period of an orbit given the gravitational parameter, position, and velocity vectors.
+ * @param {number} k - The gravitational parameter.
+ * @param {Cartesian3} r - The position vector in meters.
+ * @param {Cartesian3} v - The velocity vector in meters.
+ * @returns {number} The period of the orbit in seconds.
+ */
+function rv2period(k, r, v) {
   const h = cross(r, v)
   const p = dot(h, h) / k
   const ecc = rv2ecc(k, r, v)
+
+  if(ecc >= 1) return Infinity
+
   const a = p / (1 - ecc * ecc)
   const mm = Math.sqrt(k / Math.abs(a*a*a))
 
   return 2 * Math.PI / mm
 }
 
-
-function rv2coe(k, r, v, tol=1e-8) {
+/**
+ * Calculates the classical orbital elements (COE) of an orbit given the gravitational parameter, position, and velocity vectors.
+ * @param {number} k - The gravitational parameter.
+ * @param {Cartesian3} r - The position vector.
+ * @param {Cartesian3} v - The velocity vector.
+ * @param {number} [tol=1e-12] - The tolerance for determining circular and equatorial orbits.
+ * @returns {Array} An array containing the classical orbital elements: [p, ecc, inc, raan, argp, nu].
+ */
+function rv2coe(k, r, v, tol=1e-12) {
   const h = cross(r, v)
   const n = cross(Cartesian3.UNIT_Z, h)
   const e = mult(sub(mult(r, dot(v, v) - k / mag(r)), mult(v, dot(r, v))), 1/k)
@@ -171,11 +231,39 @@ function rv2coe(k, r, v, tol=1e-8) {
     const px = dot(r, n)
     const py = dot(r, cross(h, n)) / mag(h)
     argp = (Math.atan2(py, px) - nu) % (2 * Math.PI)
+    if(argp < 0) argp += 2 * Math.PI
   }
 
   nu = (nu + Math.PI) % (2 * Math.PI) - Math.PI
 
   return [p, ecc, inc, raan, argp, nu]
+}
+
+
+/** Helper functions **/
+
+function cross(a, b) {
+  return Cartesian3.cross(a, b, new Cartesian3())
+}
+
+function dot(a, b) {
+  return Cartesian3.dot(a, b)
+}
+
+function mult(a, b) {
+  return new Cartesian3(a.x * b, a.y * b, a.z * b)
+}
+
+function sub(a, b) {
+  return new Cartesian3(a.x - b.x, a.y - b.y, a.z - b.z)
+}
+
+function mag(a) {
+  return Cartesian3.magnitude(a)
+}
+
+function cot(x) {
+  return 1 / Math.tan(x);
 }
 
 function E_to_nu(E, ecc) {
@@ -188,4 +276,4 @@ function F_to_nu(F, ecc) {
   return nu;
 }
 
-export { vallado, rv2p, rv2ecc, rv2coe }
+export { vallado, rv2period, rv2ecc, rv2coe }

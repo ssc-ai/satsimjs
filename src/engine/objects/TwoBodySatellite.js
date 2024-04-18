@@ -1,4 +1,4 @@
-import { vallado, rv2p, rv2ecc } from '../dynamics/twobody.js'
+import { vallado, rv2period, rv2ecc } from '../dynamics/twobody.js'
 import { Cartesian3, JulianDate, ReferenceFrame } from 'cesium'
 import { Math as CMath } from 'cesium'
 import SimObject from './SimObject.js'
@@ -24,7 +24,7 @@ class TwoBodySatellite extends SimObject {
     velocity = Cartesian3.clone(velocity)
     time - JulianDate.clone(time)
     this._epoch = { position, velocity, time }
-    this._period = rv2p(K, position, velocity)
+    this._period = rv2period(K, position, velocity)
     this._eccentricity = rv2ecc(K, position, velocity)
     this.orientation = orientation //TODO
   }

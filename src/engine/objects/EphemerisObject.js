@@ -1,7 +1,7 @@
-import { rv2p, rv2ecc } from '../dynamics/twobody.js'
+import { rv2period, rv2ecc } from '../dynamics/twobody.js'
 import { JulianDate, ReferenceFrame, Math as CMath} from 'cesium'
-import { lagrange_fast } from '../dynamics/lagrange'
-import SimObject from './SimObject'
+import { lagrange_fast } from '../dynamics/lagrange.js'
+import SimObject from './SimObject.js'
 
 const K = CMath.GRAVITATIONALPARAMETER
 
@@ -43,7 +43,7 @@ class EphemerisObject extends SimObject {
     }
 
     //TODO this needs to be updated when the state vectors are changed
-    this._period = rv2p(K, this._stateVectors[0].position, this._stateVectors[0].velocity)
+    this._period = rv2period(K, this._stateVectors[0].position, this._stateVectors[0].velocity)
     this._eccentricity = rv2ecc(K, this._stateVectors[0].position, this._stateVectors[0].velocity)
   }
 
