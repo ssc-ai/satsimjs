@@ -1,4 +1,4 @@
-import { JulianDate, PointPrimitiveCollection, BillboardCollection, LabelCollection, Viewer, ImageryLayer, UrlTemplateImageryProvider, IonImageryProvider, defined, Math as CMath, Cartesian2, Cartesian3, Matrix4, Color, SceneMode, ReferenceFrame, defaultValue, PostProcessStage, EntityView, Entity, Clock } from "cesium"
+import { JulianDate, PointPrimitiveCollection, BillboardCollection, LabelCollection, Viewer, ImageryLayer, UrlTemplateImageryProvider, IonImageryProvider, defined, Math as CMath, Cartesian2, Cartesian3, Matrix4, Color, SceneMode, ReferenceFrame, defaultValue, PostProcessStage, EntityView, Entity, Clock, Camera } from "cesium"
 import InfoBox from "./InfoBox.js"
 import Toolbar from "./Toolbar.js"
 import SensorFieldOfRegardVisualizer from "../engine/cesium/SensorFieldOfRegardVisualizer.js"
@@ -123,15 +123,15 @@ function mixinViewer(viewer, universe, options) {
   ///////////////////
 
   /**
-   * Add an updatePost listener to fix point primitive tracking.
+   * Add an onTick listener to fix point primitive tracking.
    * @param {Clock} clock 
    */
-  const updatePost = function (clock) {
+  const onTick = function (clock) {
     if (defined(viewer._entityView && defined(viewer._trackedEntity)) && defined(viewer._trackedEntity.point2) ) { // fix for point primitive not tracking
       viewer._entityView.update(clock.currentTime, viewer.boundingSphereScratch)
     }
   }
-  viewer._eventHelper.add(viewer.clock.onTick, updatePost, viewer);
+  viewer._eventHelper.add(viewer.clock.onTick, onTick, viewer);
 
   /**
    * Override the scene pick function.
@@ -223,44 +223,63 @@ function mixinViewer(viewer, universe, options) {
   // New Listeners
   ///////////////////
 
-  /**
-   * Post update listener which adds new 3D perspectives and ECI mode.
-   */
-  scene.postUpdate.addEventListener((scene, time) => {
+  function updateCamera(scene, time) {
     const camera = viewer.camera
     ecrButton.checked = viewer.referenceFrameView === ReferenceFrame.FIXED
-    universe.earth.update(time, universe)
     viewer._selectionIndicator = selectionIndicator
 
-    // senor perspective
-    if (viewer.cameraMode === "sensor") {
-      viewer.trackedSensor.update(time, universe)
-      camera.direction = new Cartesian3(0, 0, -1);
-      camera.right = new Cartesian3(1, 0, 0);
-      camera.up = new Cartesian3(0, 1, 0);
-      camera.position = new Cartesian3(CMath.EPSILON19, 0, 0) // if 0,0,0, cesium will crash
+    // sensor and what's up view
+    if (viewer.cameraMode === "sensor" || viewer.cameraMode === "up") {
+
+      // scene.globe.show = false    
+      scene.skyAtmosphere.show = false;
+      scene.fog.enabled = false;
+      scene.globe.showGroundAtmosphere = false;
 
       universe.earth.update(time, universe)
-      const transform = new Matrix4()
-      Matrix4.multiply(universe.earth.worldToLocalTransform, viewer.trackedSensor.localToWorldTransform, transform)
-      Matrix4.clone(transform, camera.transform);
-      camera.frustum.fov = CMath.toRadians(viewer.trackedSensor.x_fov + viewer.trackedSensor.x_fov * 0.2)
-    // sensor what's up
-    } else if (viewer.cameraMode === "up") {
-      viewer._selectionIndicator = undefined //doesn't work in this mode
       viewer.trackedSensor.update(time, universe)
-      camera.direction = new Cartesian3(0, 0, 1);
-      camera.right = new Cartesian3(0, 1, 0);
-      camera.up = new Cartesian3(-1, 0, 0);
-      camera.position = new Cartesian3(CMath.EPSILON19, 0, 0) // if 0,0,0, cesium will crash
 
-      universe.earth.update(time, universe)
       const transform = new Matrix4()
-      Matrix4.multiply(universe.earth.worldToLocalTransform, viewer.trackedSensor.parent.parent.localToWorldTransform, transform)
-      Matrix4.clone(transform, camera.transform);
-      camera.frustum.fov = CMath.toRadians(160)
+
+      if (viewer.cameraMode === "sensor") {
+
+        scene.skyBox.show = false;      
+
+        camera.direction = new Cartesian3(0, 0, -1);
+        camera.right = new Cartesian3(1, 0, 0);
+        camera.up = new Cartesian3(0, 1, 0);
+        camera.position = new Cartesian3(0, 0, 0)
+  
+        Matrix4.multiply(universe.earth.worldToLocalTransform, viewer.trackedSensor.localToWorldTransform, transform)
+        camera.frustum.fov = CMath.toRadians(viewer.trackedSensor.x_fov + viewer.trackedSensor.x_fov * 0.2)
+      } else {
+
+        scene.skyBox.show = true;
+
+        camera.direction = new Cartesian3(0, 0, 1);
+        camera.right = new Cartesian3(0, 1, 0);
+        camera.up = new Cartesian3(-1, 0, 0);
+        camera.position = new Cartesian3(0, 0, 0)
+
+        Matrix4.multiply(universe.earth.worldToLocalTransform, viewer.trackedSensor.parent.parent.localToWorldTransform, transform)
+        camera.frustum.fov = CMath.toRadians(160)
+      }
+
+      // the following lines are required to set the camera orientation
+      Matrix4.multiplyByPoint(transform, camera.position, camera.positionWC)
+      Matrix4.multiplyByPointAsVector(transform, camera.direction, camera.directionWC)
+      Matrix4.multiplyByPointAsVector(transform, camera.up, camera.upWC)
+      camera._setTransform(transform)
+
     // world view
     } else {
+
+      scene.globe.show = true    
+      scene.skyAtmosphere.show = true;
+      scene.fog.enabled = true;
+      scene.globe.showGroundAtmosphere = true;
+      scene.skyBox.show = true;      
+
       // 2D modes
       if (scene.mode !== SceneMode.SCENE3D) {
         return
@@ -274,7 +293,12 @@ function mixinViewer(viewer, universe, options) {
         }
       }
     }
-  })
+  }
+
+  /**
+   * Post update listener which adds new 3D perspectives and ECI mode.
+   */
+  scene.preRender.addEventListener(updateCamera)
 
   /**
    * Morph complete listener which enables/disables UI elements based on the mode.
@@ -524,7 +548,8 @@ function mixinViewer(viewer, universe, options) {
       v.outline = mode === "world";
     });
 
-    viewer.cameraMode = mode;   
+    viewer.cameraMode = mode;
+    updateCamera(scene, viewer.clock.currentTime);
   };
 
   /**
@@ -608,37 +633,31 @@ function mixinViewer(viewer, universe, options) {
     options.infoBox2Container.appendChild(infoBoxContainer);
     const infoBox = new InfoBox(infoBoxContainer, viewer, universe);
 
-    function trackCallback(infoBoxViewModel) {
-      viewer.referenceFrameView = ReferenceFrame.FIXED;
-      if (
-        infoBoxViewModel.isCameraTracking &&
-        viewer.trackedEntity === viewer.selectedEntity
-      ) {
-        viewer.trackedEntity = undefined;
-      } else {
-        const selectedEntity = viewer.selectedEntity;
-        const position = selectedEntity.position;
-        if (defined(position)) {
-          viewer.trackedEntity = viewer.selectedEntity;
-        } else {
-          viewer.zoomTo(viewer.selectedEntity);
-        }
-      }
-    }
-
-    function closeInfoBox(infoBoxViewModel) {
-      viewer.selectedEntity = undefined;
-    };
-
     const infoBoxViewModel = infoBox.viewModel;
     viewer._eventHelper.add(
       infoBoxViewModel.cameraClicked,
-      trackCallback,
+      (infoBoxViewModel) => { 
+        viewer.referenceFrameView = ReferenceFrame.FIXED;
+        if (
+          infoBoxViewModel.isCameraTracking &&
+          viewer.trackedEntity === viewer.selectedEntity
+        ) {
+          viewer.trackedEntity = undefined;
+        } else {
+          const selectedEntity = viewer.selectedEntity;
+          const position = selectedEntity.position;
+          if (defined(position)) {
+            viewer.trackedEntity = viewer.selectedEntity;
+          } else {
+            viewer.zoomTo(viewer.selectedEntity);
+          }
+        }
+      },
       this
     );
     viewer._eventHelper.add(
       infoBoxViewModel.closeClicked,
-      closeInfoBox,
+      () => { viewer.selectedEntity = undefined; },
       this
     );
     viewer._infoBox = infoBox;
@@ -748,7 +767,6 @@ function mixinViewer(viewer, universe, options) {
 
   function setCameraState(state) {
     camera.frustum.fov = state.fov;
-    camera.frustum = camera.frustum;
     Cartesian3.clone(state.direction, camera.direction);
     Cartesian3.clone(state.right, camera.right);
     Cartesian3.clone(state.up, camera.up);
@@ -820,7 +838,7 @@ void main (void)
   }));
 
   return viewer;
-};
+}
 
 
 export {
