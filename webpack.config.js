@@ -1,12 +1,16 @@
+import CopyWebpackPlugin from 'copy-webpack-plugin';
+import path from 'path';
+import webpack from 'webpack';
+import HtmlWebpackPlugin from 'html-webpack-plugin';
+import { fileURLToPath } from 'url';
+
 // The path to the CesiumJS source code
 const cesiumSource = 'node_modules/cesium/Source';
 const cesiumWorkers = '../Build/Cesium/Workers';
-const CopyWebpackPlugin = require('copy-webpack-plugin');
-const path = require('path');
-const webpack = require('webpack');
-const HtmlWebpackPlugin = require('html-webpack-plugin');
+const __filename = fileURLToPath(import.meta.url); // get the resolved path to the file
+const __dirname = path.dirname(__filename); // get the name of the directory
 
-module.exports = {
+export default {
     context: __dirname,
     entry: {
         app: './app/index.js'
@@ -22,7 +26,7 @@ module.exports = {
         // add satsim as an alias to the root directory
         alias: {
             "satsim": path.resolve(__dirname, ".")
-          }        
+        }
     },
     module: {
         rules: [{
