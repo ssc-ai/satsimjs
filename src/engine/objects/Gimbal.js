@@ -1,6 +1,6 @@
 import { Cartesian3, JulianDate, defined } from "cesium";
-import SimObject from "./SimObject";
-import Universe from "../Universe";
+import SimObject from "./SimObject.js";
+import Universe from "../Universe.js";
 
 /**
  * Represents a base gimbal object that can track another object.

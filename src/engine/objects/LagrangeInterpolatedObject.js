@@ -1,7 +1,7 @@
 import { JulianDate, defaultValue} from 'cesium'
-import { lagrange } from '../dynamics/lagrange'
-import SimObject from './SimObject'
-import Universe from '../Universe'
+import { lagrange } from '../dynamics/lagrange.js'
+import SimObject from './SimObject.js'
+import Universe from '../Universe.js'
 
 /**
  * A class representing a Lagrange interpolated object.

@@ -1,5 +1,5 @@
 import { defaultValue, Color, Cartesian3, Math as CMath } from 'cesium';
-import CompoundElementVisualizer from './CompoundElementVisualizer';
+import CompoundElementVisualizer from './CompoundElementVisualizer.js';
 
 class GeoBeltVisualizer extends CompoundElementVisualizer {
   constructor(viewer, color) {

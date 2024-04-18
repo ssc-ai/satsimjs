@@ -1,6 +1,6 @@
-import ElectroOpicalSensor from "./ElectroOpticalSensor";
-import Gimbal from "./Gimbal";
-import SimObject from "./SimObject";
+import ElectroOpicalSensor from "./ElectroOpticalSensor.js";
+import Gimbal from "./Gimbal.js";
+import SimObject from "./SimObject.js";
 
 
 /**

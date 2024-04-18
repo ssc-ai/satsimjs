@@ -1,8 +1,8 @@
 import { PointPrimitiveCollection, Color, Viewer } from 'cesium';
-import CompoundElementVisualizer from './CompoundElementVisualizer';
-import EarthGroundStation from '../objects/EarthGroundStation';
+import CompoundElementVisualizer from './CompoundElementVisualizer.js';
+import EarthGroundStation from '../objects/EarthGroundStation.js';
 import { colorVisibleSatellites } from "./utils.js";
-import Universe from '../Universe';
+import Universe from '../Universe.js';
 
 /**
  * A visualizer for a grid of ground sites that can be used to visualize satellite coverage.
