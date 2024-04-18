@@ -1,4 +1,4 @@
-import Node from './Node';
+import Node from './Node.js';
 
 /**
  * A group of nodes that can have children added and removed.
@@ -43,9 +43,10 @@ class Group extends Node {
    * Removes all children from this group.
    */
   removeAll() {
-    this.children.forEach(child => {
+    while (this.children.length > 0) {
+      const child = this.children[0];
       this.removeChild(child);
-    });
+    }
   }
 
   /**
