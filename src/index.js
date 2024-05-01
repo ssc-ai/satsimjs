@@ -1,4 +1,4 @@
-globalThis.SATSIM_VERSION = "0.5.0-alpha"
+globalThis.SATSIM_VERSION = "0.6.0-alpha"
 
 export { default as Universe } from './engine/Universe.js'
 
@@ -29,6 +29,8 @@ export { default as InfoBox } from './widgets/InfoBox.js'
 export { default as Toolbar } from './widgets/Toolbar.js'
 export { createViewer, mixinViewer } from './widgets/Viewer.js'
 
-export { fetchTle } from './io/tle.js'
+export { fetchTle, parseTle } from './io/tle.js'
 export { southEastZenithToAzEl, spaceBasedToAzEl } from './engine/dynamics/gimbal.js'
 export { getVisibility } from './engine/geometry/visibility.js'
+
+export { applyIau2006XysDataPatch } from './engine/cesium/Iau2006XysDataLocal.js'
