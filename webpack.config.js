@@ -21,7 +21,7 @@ export default {
         sourcePrefix: ''
     },
     resolve: {
-        fallback: { "https": false, "zlib": false, "http": false, "url": false },
+        fallback: { "https": false, "zlib": false, "http": false, "url": false, "fs": false },
         mainFiles: ['index', 'Cesium'],
         // add satsim as an alias to the root directory
         alias: {
