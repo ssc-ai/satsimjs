@@ -2,12 +2,16 @@ async function fetchTle(url, linesPerSatellite, callback) {
   const response = await fetch(url);
   const text = await response.text();
 
+  parseTle(text, linesPerSatellite, callback);
+}
+
+function parseTle(text, linesPerSatellite, callback) {
   const lines = text.split('\n');
   const count = lines.length - 1;
 
-  for(let i = 0; i < count; i+=linesPerSatellite) {
+  for (let i = 0; i < count; i += linesPerSatellite) {
     let line1, line2, line3 = '';
-    if(linesPerSatellite === 2) {
+    if (linesPerSatellite === 2) {
       line1 = lines[i].slice(2, 8);
       line2 = lines[i];
       line3 = lines[i+1];
@@ -18,9 +22,10 @@ async function fetchTle(url, linesPerSatellite, callback) {
     }
 
     callback(line1, line2, line3)
-  }  
+  }
 }
 
 export {
-  fetchTle
+  fetchTle,
+  parseTle
 }
