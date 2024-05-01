@@ -77,7 +77,6 @@ describe('Graph Tests', () => {
             0.0,  0.0,  0.0, 1.0
         );
         for (const n of allNodes) {
-            console.log(n)
             expect(Matrix4.equalsEpsilon(n.localToWorldTransform, expected, eps)).toBe(true);
         }
 
