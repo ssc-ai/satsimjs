@@ -239,6 +239,30 @@ function rv2coe(k, r, v, tol=1e-12) {
   return [p, ecc, inc, raan, argp, nu]
 }
 
+/**
+ * Converts from classical orbital elements to modified equinoctial orbital elements.
+ * @param {number} p - Semi-latus rectum or parameter.
+ * @param {number} ecc - Eccentricity.
+ * @param {number} inc - Inclination in radians.
+ * @param {number} raan - Longitude of ascending node in radians.
+ * @param {number} argp - Argument of perigee in radians.
+ * @param {number} nu - True anomaly in radians.
+ * @returns {Array} An array containing the modified equinoctial orbital elements: [p, f, g, h, k, L].
+ */
+function coe2mee(p, ecc, inc, raan, argp, nu) {
+  if (inc === Math.PI) {
+    throw new Error("Cannot compute modified equinoctial set for 180 degrees orbit inclination due to `h` and `k` singularity.");
+  }
+
+  const lonper = raan + argp;
+  const f = ecc * Math.cos(lonper);
+  const g = ecc * Math.sin(lonper);
+  const h = Math.tan(inc / 2) * Math.cos(raan);
+  const k = Math.tan(inc / 2) * Math.sin(raan);
+  const L = lonper + nu;
+  return [p, f, g, h, k, L];
+}
+
 
 /** Helper functions **/
 
@@ -276,4 +300,4 @@ function F_to_nu(F, ecc) {
   return nu;
 }
 
-export { vallado, rv2period, rv2ecc, rv2coe }
+export { vallado, rv2period, rv2ecc, rv2coe, coe2mee }
