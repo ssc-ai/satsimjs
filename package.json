@@ -1,6 +1,6 @@
 {
   "name": "satsim",
-  "version": "0.7.0",
+  "version": "0.8.0",
   "description": "SatSim for JavaScript.",
   "homepage": "https://github.com/ssc-ai/satsimjs/",
   "license": "MIT",
@@ -51,7 +51,7 @@
     "webpack-dev-server": "^4.3.1"
   },
   "dependencies": {
-    "cesium": "^1.116.0",
-    "satellite.js": "^5.0.0"
+    "cesium": "^1.132.0",
+    "satellite.js": "^6.0.0"
   }
 }

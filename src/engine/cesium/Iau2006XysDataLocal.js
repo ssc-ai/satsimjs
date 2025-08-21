@@ -1,4 +1,4 @@
-import { Iau2006XysSample, TimeStandard, Resource, Transforms, JulianDate, defaultValue, defined } from 'cesium';
+import { Iau2006XysSample, TimeStandard, Resource, Transforms, JulianDate, defined } from 'cesium';
 import { promises as fsPromises } from 'fs';
 
 
@@ -24,26 +24,23 @@ import { promises as fsPromises } from 'fs';
  *
  * @private
  */
-function Iau2006XysDataLocal(options) {
-  options = defaultValue(options, defaultValue.EMPTY_OBJECT);
+function Iau2006XysDataLocal(options = {}) {
 
   this._xysFileUrlTemplate = Resource.createIfNeeded(
     options.xysFileUrlTemplate
   );
-  this._interpolationOrder = defaultValue(options.interpolationOrder, 9);
-  this._sampleZeroJulianEphemerisDate = defaultValue(
-    options.sampleZeroJulianEphemerisDate,
-    2442396.5
-  );
+  this._interpolationOrder = options.interpolationOrder ?? 9;
+  this._sampleZeroJulianEphemerisDate =
+    options.sampleZeroJulianEphemerisDate ?? 2442396.5;
   this._sampleZeroDateTT = new JulianDate(
     this._sampleZeroJulianEphemerisDate,
     0.0,
     TimeStandard.TAI
   );
-  this._stepSizeDays = defaultValue(options.stepSizeDays, 1.0);
-  this._samplesPerXysFile = defaultValue(options.samplesPerXysFile, 1000);
-  this._totalSamples = defaultValue(options.totalSamples, 27426);
-  this._baseDir = defaultValue(options.baseDir, 'node_modules/cesium/Build/Cesium/Assets/IAU2006_XYS/');
+  this._stepSizeDays = options.stepSizeDays ?? 1.0;
+  this._samplesPerXysFile = options.samplesPerXysFile ?? 1000;
+  this._totalSamples = options.totalSamples ?? 27426;
+  this._baseDir = options.baseDir ?? 'node_modules/cesium/Build/Cesium/Assets/IAU2006_XYS/';
   this._samples = new Array(this._totalSamples * 3);
   this._chunkDownloadsInProgress = [];
 
