@@ -1,4 +1,4 @@
-import { vallado, rv2period, rv2ecc, rv2coe } from '../src/engine/dynamics/twobody';
+import { vallado, rv2period, rv2ecc, rv2coe, coe2mee } from '../src/engine/dynamics/twobody';
 import { Cartesian3 } from 'cesium';
 
 describe('twobody', () => {
@@ -94,5 +94,186 @@ describe('twobody', () => {
             expect(Cartesian3.equalsEpsilon(result.position, new Cartesian3(expected2[i][1], expected2[i][2], expected2[i][3]), eps)).toEqual(true);
             expect(Cartesian3.equalsEpsilon(result.velocity, new Cartesian3(expected2[i][4], expected2[i][5], expected2[i][6]), eps)).toEqual(true);
         }
+    });
+
+    test('should handle zero delta time in vallado', () => {
+        const result = vallado(mu, ro1, vo1, 0, numiter);
+        
+        // Should return original position and velocity for zero delta time
+        expect(Cartesian3.equalsEpsilon(result.position, ro1, eps)).toEqual(true);
+        expect(Cartesian3.equalsEpsilon(result.velocity, vo1, eps)).toEqual(true);
+    });
+
+    test('should handle very small delta time in vallado', () => {
+        const smallDt = 1e-12;
+        const result = vallado(mu, ro1, vo1, smallDt, numiter);
+        
+        // For very small time, result should be very close to original
+        expect(result.position.x).toBeCloseTo(ro1.x, 6);
+        expect(result.position.y).toBeCloseTo(ro1.y, 6);
+        expect(result.position.z).toBeCloseTo(ro1.z, 6);
+    });
+
+    test('should handle delta time greater than orbital period in vallado', () => {
+        // Use a very large delta time that exceeds the orbital period
+        const largeDt = 100000; // Large time that should exceed the period
+        const result = vallado(mu, ro1, vo1, largeDt, numiter);
+        
+        // Should still return a valid result
+        expect(result.position).toBeDefined();
+        expect(result.velocity).toBeDefined();
+        expect(isFinite(result.position.x)).toBe(true);
+        expect(isFinite(result.position.y)).toBe(true);
+        expect(isFinite(result.position.z)).toBe(true);
+    });
+
+    test('should handle parabolic orbit in vallado', () => {
+        // Create a parabolic orbit (e = 1, sme = 0)
+        const rPara = new Cartesian3(7000000, 0, 0);
+        const vPara = new Cartesian3(0, Math.sqrt(2 * mu / 7000000), 0); // Escape velocity
+        
+        const result = vallado(mu, rPara, vPara, 100, numiter);
+        
+        // Should complete without error
+        expect(result.position).toBeDefined();
+        expect(result.velocity).toBeDefined();
+    });
+
+    test('should handle hyperbolic orbit in vallado', () => {
+        // Create a hyperbolic orbit (e > 1)
+        const rHyp = new Cartesian3(7000000, 0, 0);
+        const vHyp = new Cartesian3(0, 15000, 0); // Hyperbolic velocity
+        
+        const result = vallado(mu, rHyp, vHyp, 100, numiter);
+        
+        // Should complete without error
+        expect(result.position).toBeDefined();
+        expect(result.velocity).toBeDefined();
+    });
+
+    test('should handle convergence failure in vallado', () => {
+        // Use very few iterations to force convergence failure
+        const result = vallado(mu, ro1, vo1, 1000, 1);
+        
+        // Should still return a result even if convergence fails
+        expect(result.position).toBeDefined();
+        expect(result.velocity).toBeDefined();
+    });
+
+    test('should handle rv2coe edge cases', () => {
+        // Test circular equatorial orbit
+        const rCircEq = new Cartesian3(7000000, 0, 0);
+        const vCircEq = new Cartesian3(0, Math.sqrt(mu / 7000000), 0);
+        
+        const coeCircEq = rv2coe(mu, rCircEq, vCircEq);
+        expect(coeCircEq[1]).toBeCloseTo(0, 10); // eccentricity should be 0
+        expect(coeCircEq[2]).toBeCloseTo(0, 10); // inclination should be 0
+        
+        // Test circular inclined orbit
+        const rCircInc = new Cartesian3(7000000, 0, 0);
+        const vCircInc = new Cartesian3(0, 0, Math.sqrt(mu / 7000000));
+        
+        const coeCircInc = rv2coe(mu, rCircInc, vCircInc);
+        expect(coeCircInc[1]).toBeCloseTo(0, 10); // eccentricity should be 0
+        expect(coeCircInc[2]).toBeCloseTo(Math.PI / 2, 10); // inclination should be 90 degrees
+        
+        // Test equatorial elliptical orbit
+        const rEqEll = new Cartesian3(7000000, 0, 0);
+        const vEqEll = new Cartesian3(0, 6000, 0); // Elliptical velocity
+        
+        const coeEqEll = rv2coe(mu, rEqEll, vEqEll);
+        expect(coeEqEll[1]).toBeGreaterThan(0); // eccentricity should be > 0
+        expect(coeEqEll[2]).toBeCloseTo(0, 10); // inclination should be 0
+    });
+
+    test('should handle rv2coe with custom tolerance', () => {
+        const customTol = 1e-6;
+        const rTest = new Cartesian3(7000000, 0, 0);
+        const vTest = new Cartesian3(0, Math.sqrt(mu / 7000000) + 1e-7, 0); // Slightly non-circular
+        
+        const coe = rv2coe(mu, rTest, vTest, customTol);
+        expect(coe).toHaveLength(6);
+    });
+
+    test('should handle rv2coe hyperbolic case', () => {
+        const rHyp = new Cartesian3(7000000, 0, 0);
+        const vHyp = new Cartesian3(0, 15000, 0); // Hyperbolic velocity
+        
+        const coeHyp = rv2coe(mu, rHyp, vHyp);
+        expect(coeHyp[1]).toBeGreaterThan(1); // eccentricity should be > 1 for hyperbola
+    });
+
+    test('should convert COE to MEE correctly', () => {
+        const p = 7000000;
+        const ecc = 0.1;
+        const inc = 0.5;
+        const raan = 1.0;
+        const argp = 2.0;
+        const nu = 0.5;
+        
+        const mee = coe2mee(p, ecc, inc, raan, argp, nu);
+        
+        expect(mee).toHaveLength(6);
+        expect(mee[0]).toBe(p); // p remains the same
+        expect(mee[1]).toBeCloseTo(ecc * Math.cos(raan + argp), 12); // f
+        expect(mee[2]).toBeCloseTo(ecc * Math.sin(raan + argp), 12); // g
+        expect(mee[3]).toBeCloseTo(Math.tan(inc / 2) * Math.cos(raan), 12); // h
+        expect(mee[4]).toBeCloseTo(Math.tan(inc / 2) * Math.sin(raan), 12); // k
+        expect(mee[5]).toBeCloseTo(raan + argp + nu, 12); // L
+    });
+
+    test('should handle 180 degree inclination error in coe2mee', () => {
+        const p = 7000000;
+        const ecc = 0.1;
+        const inc = Math.PI; // 180 degrees
+        const raan = 1.0;
+        const argp = 2.0;
+        const nu = 0.5;
+        
+        expect(() => coe2mee(p, ecc, inc, raan, argp, nu)).toThrow();
+    });
+
+    test('should handle various eccentricity cases in rv2period', () => {
+        // Circular orbit
+        const rCirc = new Cartesian3(7000000, 0, 0);
+        const vCirc = new Cartesian3(0, Math.sqrt(mu / 7000000), 0);
+        const periodCirc = rv2period(mu, rCirc, vCirc);
+        expect(periodCirc).toBeCloseTo(2 * Math.PI * Math.sqrt(7000000 ** 3 / mu), 6);
+        
+        // Elliptical orbit
+        const periodEll = rv2period(mu, ro1, vo1);
+        expect(isFinite(periodEll)).toBe(true);
+        expect(periodEll).toBeGreaterThan(0);
+        
+        // Parabolic/hyperbolic orbit
+        const rPara = new Cartesian3(7000000, 0, 0);
+        const vPara = new Cartesian3(0, Math.sqrt(2.1 * mu / 7000000), 0); // Slightly hyperbolic
+        const periodPara = rv2period(mu, rPara, vPara);
+        expect(periodPara).toBe(Infinity);
+    });
+
+    test('should handle various eccentricity cases in rv2ecc', () => {
+        // Circular orbit
+        const rCirc = new Cartesian3(7000000, 0, 0);
+        const vCirc = new Cartesian3(0, Math.sqrt(mu / 7000000), 0);
+        const eccCirc = rv2ecc(mu, rCirc, vCirc);
+        expect(eccCirc).toBeCloseTo(0, 10);
+        
+        // Elliptical orbit
+        const eccEll = rv2ecc(mu, ro1, vo1);
+        expect(eccEll).toBeGreaterThan(0);
+        expect(eccEll).toBeLessThan(1);
+        
+        // Parabolic orbit (approximately)
+        const rPara = new Cartesian3(7000000, 0, 0);
+        const vPara = new Cartesian3(0, Math.sqrt(2 * mu / 7000000), 0);
+        const eccPara = rv2ecc(mu, rPara, vPara);
+        expect(eccPara).toBeCloseTo(1, 6);
+        
+        // Hyperbolic orbit
+        const rHyp = new Cartesian3(7000000, 0, 0);
+        const vHyp = new Cartesian3(0, 15000, 0);
+        const eccHyp = rv2ecc(mu, rHyp, vHyp);
+        expect(eccHyp).toBeGreaterThan(1);
     });
 });
