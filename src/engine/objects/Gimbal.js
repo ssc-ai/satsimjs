@@ -61,7 +61,7 @@ class Gimbal extends SimObject {
    * @param {SimObject} value - The object to track.
    */
   set trackObject(value) {
-    if(value === this || value.parent === this) {
+    if(defined(value) && (value === this || value.parent === this)) {
       console.warn('Gimbal.trackObject cannot be set to self or child.');
       return;
     }
