@@ -34,9 +34,9 @@ class SGP4Satellite extends SimObject {
     const positionAndVelocity = sgp4(this._satrec, deltaMin)
 
     // check for bad sgp4 propagations
-    if(!defined(positionAndVelocity.position) || positionAndVelocity.position === false) {
-      positionAndVelocity.position = new Cartesian3()
-      positionAndVelocity.velocity = new Cartesian3()
+    if(!defined(positionAndVelocity) || !defined(positionAndVelocity.position) || positionAndVelocity.position === false) {
+      Cartesian3.clone(Cartesian3.ZERO, this._position)
+      Cartesian3.clone(Cartesian3.ZERO, this._velocity)
     } else {
       Cartesian3.multiplyByScalar(positionAndVelocity.position, 1000.0, this._position)
       Cartesian3.multiplyByScalar(positionAndVelocity.velocity, 1000.0, this._velocity)  
