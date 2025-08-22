@@ -1,6 +1,5 @@
 import { ReferenceFrame, Cartesian3, JulianDate, Matrix4, defined, defaultValue, Entity } from "cesium";
 import TransformGroup from "../graph/TransformGroup.js";
-import Universe from "../Universe.js";
 
 /**
  * A base class for all simulation objects.
