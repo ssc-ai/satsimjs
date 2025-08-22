@@ -1,7 +1,32 @@
 import Node from './Node.js';
 
 /**
- * A group of nodes that can have children added and removed.
+ * A group node that can contain multiple child nodes in a scene graph hierarchy.
+ * 
+ * The Group class extends Node to provide collection management capabilities,
+ * allowing multiple child nodes to be organized under a single parent. This
+ * enables hierarchical transformations where changes to the group affect all
+ * its children collectively.
+ * 
+ * Groups are particularly useful for organizing related objects that should
+ * move or transform together, such as components of a satellite or elements
+ * of a ground station.
+ * 
+ * @example
+ * // Create a group and add child nodes
+ * const satelliteGroup = new Group();
+ * const body = new Node();
+ * const antenna = new Node();
+ * 
+ * satelliteGroup.addChild(body);
+ * satelliteGroup.addChild(antenna);
+ * 
+ * @example
+ * // Check if group has children
+ * if (group.hasChildren) {
+ *     console.log(`Group has ${group.children.length} children`);
+ * }
+ * 
  * @extends Node
  */
 class Group extends Node {

@@ -1,7 +1,28 @@
 import { Matrix4, Cartesian3, defined } from 'cesium';
 
 /**
- * A node in a scene graph.
+ * A node in a scene graph representing a coordinate frame and transformation hierarchy.
+ * 
+ * Nodes form the basic building blocks of a scene graph, providing a hierarchical
+ * structure for organizing 3D objects and their transformations. Each node can
+ * have a parent and maintains its transformation relative to its parent's
+ * coordinate frame.
+ * 
+ * The Node class provides comprehensive coordinate transformation methods for
+ * converting between local and world coordinates, as well as transformations
+ * between different nodes in the hierarchy.
+ * 
+ * @example
+ * // Create a simple node hierarchy
+ * const rootNode = new Node();
+ * const childNode = new Node();
+ * childNode.attach(rootNode);
+ * 
+ * @example
+ * // Transform coordinates between nodes
+ * const localPoint = new Cartesian3(1, 0, 0);
+ * const worldPoint = node.transformPointToWorld(localPoint);
+ * const backToLocal = node.transformPointFromWorld(worldPoint);
  */
 class Node {
 

@@ -4,8 +4,37 @@ import Group from './Group.js';
 const _scratchMatrix3 = new Matrix3();
 
 /**
- * A group note that contains a transform. This transform is applied to all children 
- * of this group. The effects of transformations in the scene graph are cumulative.
+ * A group node with a 4x4 transformation matrix for complex 3D transformations.
+ * 
+ * The TransformGroup extends Group to provide a transformation matrix that
+ * affects all child nodes. This matrix can represent any combination of
+ * translation, rotation, and scaling operations in 3D space.
+ * 
+ * The transformation matrix is applied to all coordinate transformations
+ * involving this node and its children, enabling complex hierarchical
+ * transformations in satellite simulations and 3D scenes.
+ * 
+ * @example
+ * // Create a transform group with rotation and translation
+ * const transformGroup = new TransformGroup();
+ * 
+ * // Rotate 45 degrees around Z-axis
+ * transformGroup.rotateZ(Math.PI / 4);
+ * 
+ * // Translate 100 units in X direction
+ * transformGroup.translate(new Cartesian3(100, 0, 0));
+ * 
+ * @example
+ * // Set up satellite body coordinate frame
+ * const satelliteFrame = new TransformGroup();
+ * 
+ * // Set initial orientation (pointing nadir)
+ * const rotation = Matrix3.fromQuaternion(attitudeQuaternion);
+ * satelliteFrame.setRotation(rotation);
+ * 
+ * // Set orbital position
+ * satelliteFrame.setTranslation(orbitalPosition);
+ * 
  * @extends Group
  */
 class TransformGroup extends Group {
@@ -25,7 +54,12 @@ class TransformGroup extends Group {
 
   /**
    * Rotates this group around the X axis.
+   * 
    * @param {Number} angle - The angle to rotate, in radians.
+   * 
+   * @example
+   * // Rotate satellite 90 degrees around X-axis (pitch up)
+   * satelliteGroup.rotateX(Math.PI / 2);
    */
   rotateX(angle) {
     Matrix3.fromRotationX(angle, _scratchMatrix3);
@@ -34,7 +68,12 @@ class TransformGroup extends Group {
 
   /**
    * Rotates this group around the Y axis.
+   * 
    * @param {Number} angle - The angle to rotate, in radians.
+   * 
+   * @example
+   * // Rotate satellite 45 degrees around Y-axis (yaw left)
+   * satelliteGroup.rotateY(Math.PI / 4);
    */
   rotateY(angle) {
     Matrix3.fromRotationY(angle, _scratchMatrix3);
@@ -43,7 +82,12 @@ class TransformGroup extends Group {
 
   /**
    * Rotates this group around the Z axis.
+   * 
    * @param {Number} angle - The angle to rotate, in radians.
+   * 
+   * @example
+   * // Rotate satellite 30 degrees around Z-axis (roll)
+   * satelliteGroup.rotateZ(Math.PI / 6);
    */
   rotateZ(angle) {
     Matrix3.fromRotationZ(angle, _scratchMatrix3);
@@ -51,16 +95,28 @@ class TransformGroup extends Group {
   }
 
   /**
-   * Translates this group.
-   * @param {Cartesian3} cartesian3 - The translation vector.
+   * Translates this group by adding to its current translation.
+   * 
+   * @param {Cartesian3} cartesian3 - The translation vector to add.
+   * 
+   * @example
+   * // Move satellite 1000 km in the positive X direction
+   * const translation = new Cartesian3(1000000, 0, 0); // meters
+   * satelliteGroup.translate(translation);
    */
   translate(cartesian3) {
     Matrix4.multiplyByTranslation(this._transform, cartesian3, this._transform);
   }
 
   /**
-   * Sets the translation of this group.
-   * @param {Cartesian3} cartesian3 - The translation vector.
+   * Sets the absolute translation of this group, replacing any existing translation.
+   * 
+   * @param {Cartesian3} cartesian3 - The new translation vector.
+   * 
+   * @example
+   * // Position satellite at specific orbital location
+   * const position = new Cartesian3(-6378137, 0, 0); // At Earth's surface
+   * satelliteGroup.setTranslation(position);
    */
   setTranslation(cartesian3) {
     this._transform[12] = cartesian3.x;
@@ -69,8 +125,20 @@ class TransformGroup extends Group {
   }
 
   /**
-   * Sets the rotation of this group.
-   * @param {Matrix3} matrix3 - The rotation matrix.
+   * Sets the absolute rotation of this group, replacing any existing rotation.
+   * 
+   * @param {Matrix3} matrix3 - The 3x3 rotation matrix.
+   * 
+   * @example
+   * // Set satellite attitude from quaternion
+   * const quaternion = new Quaternion(0, 0, 0, 1); // Identity
+   * const rotationMatrix = Matrix3.fromQuaternion(quaternion);
+   * satelliteGroup.setRotation(rotationMatrix);
+   * 
+   * @example
+   * // Point satellite nadir (towards Earth)
+   * const nadirRotation = Matrix3.fromRotationY(Math.PI);
+   * satelliteGroup.setRotation(nadirRotation);
    */
   setRotation(matrix3) {
     this._transform[0] = matrix3[0];

@@ -2,8 +2,20 @@ import { Cartesian3 } from 'cesium'
 
 /**
  * Calculates the c2 and c3 functions for use in the universal variable calculation of z.
- * @param {number} znew - The z variable.
- * @returns {Array} An array containing the values of c2 and c3.
+ * 
+ * These functions are fundamental to the universal variable formulation of orbital
+ * mechanics, providing the Stumpff functions c2(z) and c3(z) that handle elliptical,
+ * parabolic, and hyperbolic orbits in a unified manner.
+ * 
+ * @param {number} znew - The universal variable z
+ * @returns {Array<number>} Array containing [c2, c3] function values
+ * @returns {number} returns[0] - c2(z) Stumpff function value
+ * @returns {number} returns[1] - c3(z) Stumpff function value
+ * 
+ * @example
+ * // Calculate Stumpff functions for elliptical orbit
+ * const [c2, c3] = findc2c3(1.5);
+ * console.log(`c2: ${c2}, c3: ${c3}`);
  */
 function findc2c3(znew) {
   const small = 0.000001;
@@ -27,14 +39,33 @@ function findc2c3(znew) {
 
 /**
  * Calculates the position and velocity vectors at a given time using the Vallado algorithm.
- * Solves keplers problem for orbit determination and returns a future geocentric equatorial
- * position and velocity vector. The solution uses universal variables.
- * @param {number} k - The gravitational parameter.
- * @param {Cartesian3} ro - The initial position.
- * @param {Cartesian3} vo - The initial velocity.
- * @param {number} dtseco - The length of time to propagate in seconds.
- * @param {number} numiter - The maximum number of iterations for convergence.
- * @returns {Object} An object containing the position and velocity vectors.
+ * 
+ * This function implements the universal variable method for solving Kepler's equation
+ * and propagating orbital state vectors. It handles elliptical, parabolic, and hyperbolic
+ * orbits using a unified approach with automatic convergence control.
+ * 
+ * The algorithm uses universal variables to avoid singularities and provides robust
+ * numerical solution for orbital propagation across all orbit types.
+ * 
+ * @param {number} k - Gravitational parameter (μ = GM) in m³/s²
+ * @param {Cartesian3} ro - Initial position vector in meters
+ * @param {Cartesian3} vo - Initial velocity vector in m/s
+ * @param {number} dtseco - Time step to propagate in seconds
+ * @param {number} numiter - Maximum number of iterations for convergence
+ * @returns {Object} Object containing the propagated state vectors
+ * @returns {Cartesian3} returns.position - Position vector at target time
+ * @returns {Cartesian3} returns.velocity - Velocity vector at target time
+ * 
+ * @example
+ * // Propagate orbit by 1 hour
+ * const mu = 3.986004418e14; // Earth's gravitational parameter
+ * const r0 = new Cartesian3(7000000, 0, 0); // Initial position (7000 km altitude)
+ * const v0 = new Cartesian3(0, 7546, 0);    // Initial velocity for circular orbit
+ * const dt = 3600; // 1 hour in seconds
+ * 
+ * const result = vallado(mu, r0, v0, dt, 100);
+ * console.log(`New position: ${result.position}`);
+ * console.log(`New velocity: ${result.velocity}`);
  */
 function vallado(k, ro, vo, dtseco, numiter) {
   const twopi = Math.PI * 2;
@@ -149,10 +180,25 @@ function vallado(k, ro, vo, dtseco, numiter) {
 
 /**
  * Calculates the eccentricity of an orbit given the gravitational parameter, position, and velocity vectors.
- * @param {number} k - The gravitational parameter.
- * @param {Cartesian3} r - The position vector.
- * @param {Cartesian3} v - The velocity vector.
- * @returns {number} The eccentricity of the orbit.
+ * 
+ * This function computes the orbital eccentricity using the specific orbital energy and
+ * angular momentum. The eccentricity is a fundamental orbital element that describes
+ * the shape of the orbit (0 = circular, 0 < e < 1 = elliptical, e = 1 = parabolic, e > 1 = hyperbolic).
+ * 
+ * @param {number} k - Gravitational parameter (μ = GM) in m³/s²
+ * @param {Cartesian3} r - Position vector in meters
+ * @param {Cartesian3} v - Velocity vector in m/s
+ * @returns {number} Orbital eccentricity (dimensionless)
+ * 
+ * @example
+ * // Calculate eccentricity for a satellite orbit
+ * const mu = 3.986004418e14;
+ * const position = new Cartesian3(7000000, 0, 0);
+ * const velocity = new Cartesian3(0, 7546, 0);
+ * 
+ * const ecc = rv2ecc(mu, position, velocity);
+ * console.log(`Orbital eccentricity: ${ecc.toFixed(6)}`);
+ * // Output: "Orbital eccentricity: 0.000000" (circular orbit)
  */
 function rv2ecc(k, r, v) {
   const e = mult(sub(mult(r, dot(v, v) - k / mag(r)), mult(v, dot(r, v))), 1/k)
@@ -161,11 +207,34 @@ function rv2ecc(k, r, v) {
 }
 
 /**
- * Calculates the period of an orbit given the gravitational parameter, position, and velocity vectors.
- * @param {number} k - The gravitational parameter.
- * @param {Cartesian3} r - The position vector in meters.
- * @param {Cartesian3} v - The velocity vector in meters.
- * @returns {number} The period of the orbit in seconds.
+ * Calculates the orbital period given the gravitational parameter, position, and velocity vectors.
+ * 
+ * This function computes the orbital period using the semi-major axis derived from the
+ * specific orbital energy. For elliptical orbits, it returns the time for one complete
+ * revolution. For parabolic and hyperbolic orbits, it returns Infinity.
+ * 
+ * The calculation uses Kepler's third law: T = 2π√(a³/μ)
+ * 
+ * @param {number} k - Gravitational parameter (μ = GM) in m³/s²
+ * @param {Cartesian3} r - Position vector in meters
+ * @param {Cartesian3} v - Velocity vector in m/s
+ * @returns {number} Orbital period in seconds (Infinity for non-elliptical orbits)
+ * 
+ * @example
+ * // Calculate period for ISS-like orbit
+ * const mu = 3.986004418e14;
+ * const position = new Cartesian3(6778000, 0, 0); // ~400km altitude
+ * const velocity = new Cartesian3(0, 7669, 0);    // Circular velocity
+ * 
+ * const period = rv2period(mu, position, velocity);
+ * console.log(`Orbital period: ${(period / 60).toFixed(1)} minutes`);
+ * // Output: "Orbital period: 92.7 minutes"
+ * 
+ * @example
+ * // Hyperbolic trajectory returns Infinity
+ * const escapeVel = new Cartesian3(0, 15000, 0); // Above escape velocity
+ * const period = rv2period(mu, position, escapeVel);
+ * console.log(`Period: ${period}`); // "Period: Infinity"
  */
 function rv2period(k, r, v) {
   const h = cross(r, v)
@@ -181,12 +250,42 @@ function rv2period(k, r, v) {
 }
 
 /**
- * Calculates the classical orbital elements (COE) of an orbit given the gravitational parameter, position, and velocity vectors.
- * @param {number} k - The gravitational parameter.
- * @param {Cartesian3} r - The position vector.
- * @param {Cartesian3} v - The velocity vector.
- * @param {number} [tol=1e-12] - The tolerance for determining circular and equatorial orbits.
- * @returns {Array} An array containing the classical orbital elements: [p, ecc, inc, raan, argp, nu].
+ * Calculates the classical orbital elements (COE) from position and velocity vectors.
+ * 
+ * This function converts Cartesian state vectors to classical orbital elements,
+ * handling special cases for circular and equatorial orbits. The elements returned
+ * follow standard orbital mechanics conventions and can be used for orbit analysis
+ * and visualization.
+ * 
+ * Classical orbital elements returned:
+ * - p: Semi-latus rectum (parameter)
+ * - ecc: Eccentricity  
+ * - inc: Inclination
+ * - raan: Right ascension of ascending node
+ * - argp: Argument of periapsis
+ * - nu: True anomaly
+ * 
+ * @param {number} k - Gravitational parameter (μ = GM) in m³/s²
+ * @param {Cartesian3} r - Position vector in meters
+ * @param {Cartesian3} v - Velocity vector in m/s
+ * @param {number} [tol=1e-12] - Tolerance for determining circular and equatorial orbits
+ * @returns {Array<number>} Array containing [p, ecc, inc, raan, argp, nu] in radians and meters
+ * @returns {number} returns[0] - Semi-latus rectum in meters
+ * @returns {number} returns[1] - Eccentricity (dimensionless)
+ * @returns {number} returns[2] - Inclination in radians
+ * @returns {number} returns[3] - Right ascension of ascending node in radians
+ * @returns {number} returns[4] - Argument of periapsis in radians
+ * @returns {number} returns[5] - True anomaly in radians
+ * 
+ * @example
+ * // Calculate orbital elements for a typical satellite
+ * const mu = 3.986004418e14;
+ * const r = new Cartesian3(7000000, 0, 0);
+ * const v = new Cartesian3(0, 7546, 0);
+ * 
+ * const [p, ecc, inc, raan, argp, nu] = rv2coe(mu, r, v);
+ * console.log(`Inclination: ${(inc * 180/Math.PI).toFixed(2)}°`);
+ * console.log(`Eccentricity: ${ecc.toFixed(6)}`);
  */
 function rv2coe(k, r, v, tol=1e-12) {
   const h = cross(r, v)
@@ -240,14 +339,44 @@ function rv2coe(k, r, v, tol=1e-12) {
 }
 
 /**
- * Converts from classical orbital elements to modified equinoctial orbital elements.
- * @param {number} p - Semi-latus rectum or parameter.
- * @param {number} ecc - Eccentricity.
- * @param {number} inc - Inclination in radians.
- * @param {number} raan - Longitude of ascending node in radians.
- * @param {number} argp - Argument of perigee in radians.
- * @param {number} nu - True anomaly in radians.
- * @returns {Array} An array containing the modified equinoctial orbital elements: [p, f, g, h, k, L].
+ * Converts classical orbital elements to modified equinoctial elements.
+ * 
+ * This function transforms from the classical orbital element representation
+ * to the modified equinoctial element (MEE) representation, which avoids
+ * singularities for small eccentricity and inclination orbits. The MEE
+ * representation is particularly useful for numerical orbit propagation.
+ * 
+ * Modified equinoctial elements returned:
+ * - p: Semi-latus rectum (same as in COE)
+ * - f: First component of eccentricity vector  
+ * - g: Second component of eccentricity vector
+ * - h: First component of inclination vector
+ * - k: Second component of inclination vector
+ * - L: True longitude
+ * 
+ * @param {number} p - Semi-latus rectum in meters
+ * @param {number} ecc - Eccentricity (dimensionless)
+ * @param {number} inc - Inclination in radians
+ * @param {number} raan - Right ascension of ascending node in radians
+ * @param {number} argp - Argument of periapsis in radians
+ * @param {number} nu - True anomaly in radians
+ * @returns {Array<number>} Array containing [p, f, g, h, k, L] modified equinoctial elements
+ * @returns {number} returns[0] - Semi-latus rectum in meters
+ * @returns {number} returns[1] - f component (dimensionless)
+ * @returns {number} returns[2] - g component (dimensionless)
+ * @returns {number} returns[3] - h component (dimensionless)
+ * @returns {number} returns[4] - k component (dimensionless)
+ * @returns {number} returns[5] - True longitude L in radians
+ * 
+ * @throws {Error} When inclination is exactly 180 degrees (π radians)
+ * 
+ * @example
+ * // Convert COE to MEE for numerical propagation
+ * const [p_coe, ecc, inc, raan, argp, nu] = rv2coe(mu, r, v);
+ * const [p, f, g, h, k, L] = coe2mee(p_coe, ecc, inc, raan, argp, nu);
+ * 
+ * console.log(`MEE elements: p=${p}, f=${f.toFixed(6)}, g=${g.toFixed(6)}`);
+ * console.log(`h=${h.toFixed(6)}, k=${k.toFixed(6)}, L=${L.toFixed(6)}`);
  */
 function coe2mee(p, ecc, inc, raan, argp, nu) {
   if (inc === Math.PI) {
