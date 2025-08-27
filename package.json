@@ -20,13 +20,15 @@
   "type": "module",
   "scripts": {
     "build": "webpack --config webpack.config.js",
+    "build:cdn": "webpack --config webpack.config.js --config-name cdn",
+    "build:app": "webpack --config webpack.config.js --config-name app",
     "watch": "webpack --config webpack.config.js --watch",
-    "start": "webpack serve --config webpack.config.js --open",
+    "start": "webpack serve --config webpack.config.js  --config-name app --open",
     "app": "node app/app.js",
     "test": "jest --verbose --runInBand",
     "coverage": "jest --verbose --runInBand --collectCoverage",
     "lint": "eslint \"./**/*.js\" --cache --quiet",
-    "serve": "npx http-server dist -p 8080"
+    "serve": "npx http-server . -p 8080"
   },
   "jest": {
     "testEnvironment": "node",
