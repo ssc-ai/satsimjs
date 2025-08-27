@@ -10,16 +10,8 @@ const cesiumWorkers = '../Build/Cesium/Workers';
 const __filename = fileURLToPath(import.meta.url); // get the resolved path to the file
 const __dirname = path.dirname(__filename); // get the name of the directory
 
-export default {
+const commonConfig = {
     context: __dirname,
-    entry: {
-        app: './app/index.js'
-    },
-    output: {
-        filename: 'app.js',
-        path: path.resolve(__dirname, 'dist'),
-        sourcePrefix: ''
-    },
     resolve: {
         fallback: { "https": false, "zlib": false, "http": false, "url": false, "fs": false },
         mainFiles: ['index', 'Cesium'],
@@ -36,6 +28,18 @@ export default {
             test: /\.(png|gif|jpg|jpeg|svg|xml|json)$/,
             use: [ 'url-loader' ]
         }]
+    }
+};
+
+const appConfig = {
+    ...commonConfig,
+    entry: {
+        app: './app/index.js'
+    },
+    output: {
+        filename: 'app.js',
+        path: path.resolve(__dirname, 'dist'),
+        sourcePrefix: ''
     },
     plugins: [
         new HtmlWebpackPlugin({
@@ -64,9 +68,52 @@ export default {
                 usePolling: false,
             },
         },
-        static: { 
-            directory: path.resolve(__dirname, './app/assets'), 
+        static: {
+            directory: path.resolve(__dirname, './app/assets'),
             publicPath: '/assets'
-        }        
+        }
     }
 };
+
+const cdnConfig = {
+    ...commonConfig,
+    entry: './src/index.js',
+    output: {
+        filename: 'satsim.js',
+        path: path.resolve(__dirname, 'dist'),
+        library: {
+            name: 'SatSim',
+            type: 'umd',
+            umdNamedDefine: true
+        },
+        globalObject: 'this'
+    },
+    plugins: [
+        new webpack.DefinePlugin({
+            CESIUM_BASE_URL: '(typeof window !== "undefined" && window.CESIUM_BASE_URL) ? window.CESIUM_BASE_URL : ""'
+        }),
+        // Copy Cesium assets for CDN build as well
+        new CopyWebpackPlugin({
+            patterns: [
+                { from: path.join(cesiumSource, cesiumWorkers), to: 'Workers' },
+                { from: path.join(cesiumSource, 'Assets'), to: 'Assets' },
+                { from: path.join(cesiumSource, 'Widgets'), to: 'Widgets' },
+                { from: path.join(cesiumSource, 'ThirdParty'), to: 'ThirdParty' }
+            ]
+        })
+    ],
+    optimization: {
+        splitChunks: false, // Disable code splitting for UMD build
+        usedExports: true,
+        sideEffects: false
+    },
+    performance: {
+        maxAssetSize: 5000000,  // 5MB
+        maxEntrypointSize: 5000000 // 5MB
+    },
+    mode: 'production',
+    devtool: 'source-map'
+};
+
+export default [appConfig, cdnConfig];
+

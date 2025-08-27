@@ -1,0 +1,55 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="utf-8">
+    <title>SatSim CDN Example</title>
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <style>
+        html, body, #cesiumContainer {
+            width: 100%; height: 100%; margin: 0; padding: 0; overflow: hidden;
+            font-family: sans-serif;
+        }
+    </style>
+    
+    <script>
+        // Use absolute paths so Cesium asset resolution is correct from any document location.
+        // This must be set before loading the satsim bundle.
+        window.CESIUM_BASE_URL = '/dist/';
+    </script>
+    
+    <!-- Load Cesium CSS from local build (absolute path) -->
+    <link href="/dist/Widgets/widgets.css" rel="stylesheet">
+    
+    <!-- Load SatSim from local CDN build (includes Cesium) -->
+    <script src="/dist/satsim.js"></script>
+</head>
+<body>
+    <div id="cesiumContainer"></div>
+
+    <script>
+        if (typeof SatSim !== 'undefined') {
+            const universe = new SatSim.Universe();
+           
+            const viewer = SatSim.createViewer('cesiumContainer', universe, {
+                showWeatherLayer: false,
+                showNightLayer: false,
+            });
+
+            // Configure clock
+            const start = SatSim.JulianDate.now();
+            viewer.clock.startTime = start.clone();
+            viewer.clock.clockStep = SatSim.ClockStep.SYSTEM_CLOCK;
+            viewer.clock.multiplier = 60;
+
+            // Update simulation each frame
+            viewer.scene.preUpdate.addEventListener((scene, time) => {
+                universe.update(time);
+            });
+
+            console.log('SatSim CDN Example loaded.');
+        } else {
+            console.error('SatSim bundle not found. Make sure /dist/satsim.js is loaded.');
+        }
+    </script>
+</body>
+</html>
