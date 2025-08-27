@@ -1,4 +1,6 @@
-globalThis.SATSIM_VERSION = "0.7.0-alpha"
+import packageJson from '../package.json';
+
+globalThis.SATSIM_VERSION = packageJson.version;
 
 export { default as Universe } from './engine/Universe.js'
 
@@ -34,3 +36,24 @@ export { southEastZenithToAzEl, spaceBasedToAzEl } from './engine/dynamics/gimba
 export { getVisibility } from './engine/geometry/visibility.js'
 
 export { applyIau2006XysDataPatch } from './engine/cesium/Iau2006XysDataLocal.js'
+
+// Export commonly used Cesium classes for CDN usage
+export { 
+  Math as CesiumMath,
+  JulianDate, 
+  ClockStep,
+  ClockRange,
+  Cartesian3,
+  Cartesian2,
+  Color,
+  Matrix3,
+  Matrix4,
+  Quaternion,
+  HeadingPitchRoll,
+  Transforms,
+  Ellipsoid,
+  EllipsoidGeodesic,
+  CesiumTerrainProvider,
+  createWorldTerrainAsync,
+  Ion
+} from 'cesium';
