@@ -9,10 +9,10 @@ yarn.lock
 webpack.config.js
 webpack.module.js
 .vscode/
-dist/
 build/
 node_modules/
 app/
 tests/
 doc/
 modules/
+app/dist/
