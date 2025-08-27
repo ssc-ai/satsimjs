@@ -1,6 +1,4 @@
-import packageJson from '../package.json';
-
-globalThis.SATSIM_VERSION = packageJson.version;
+globalThis.SATSIM_VERSION = "0.9.0";
 
 export { default as Universe } from './engine/Universe.js'
 
