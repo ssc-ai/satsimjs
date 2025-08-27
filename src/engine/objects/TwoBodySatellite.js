@@ -22,7 +22,7 @@ class TwoBodySatellite extends SimObject {
     super(name, ReferenceFrame.INERTIAL)
     position = Cartesian3.clone(position)
     velocity = Cartesian3.clone(velocity)
-    time - JulianDate.clone(time)
+    time = JulianDate.clone(time)
     this._epoch = { position, velocity, time }
     this._period = rv2period(K, position, velocity)
     this._eccentricity = rv2ecc(K, position, velocity)

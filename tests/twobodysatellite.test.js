@@ -79,13 +79,12 @@ describe('TwoBodySatellite', () => {
     });
 
     test('should handle time parameter correctly', () => {
-      // Note: There's a bug in the constructor - line 23 has `time - JulianDate.clone(time)` 
-      // instead of `time = JulianDate.clone(time)`. This test documents the current behavior.
       const originalTime = JulianDate.clone(mockTime);
       satellite = new TwoBodySatellite(mockPosition, mockVelocity, originalTime, mockOrientation, mockName);
       
-      // Due to the bug, this._epoch.time will be the original time object, not a clone
-      expect(satellite._epoch.time).toBe(originalTime);
+      // Time should be cloned, not the same object reference
+      expect(satellite._epoch.time).not.toBe(originalTime);
+      expect(JulianDate.equals(satellite._epoch.time, originalTime)).toBe(true);
     });
 
     test('should store epoch data correctly', () => {
