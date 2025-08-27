@@ -28,7 +28,8 @@
     "test": "jest --verbose --runInBand",
     "coverage": "jest --verbose --runInBand --collectCoverage",
     "lint": "eslint \"./**/*.js\" --cache --quiet",
-    "serve": "npx http-server . -p 8080"
+    "serve": "npx http-server . -p 8080",
+      "clean": "rm -rf app/dist dist"
   },
   "jest": {
     "testEnvironment": "node",
