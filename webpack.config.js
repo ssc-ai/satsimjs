@@ -32,13 +32,14 @@ const commonConfig = {
 };
 
 const appConfig = {
+    name: 'app',
     ...commonConfig,
     entry: {
         app: './app/index.js'
     },
     output: {
         filename: 'app.js',
-        path: path.resolve(__dirname, 'dist'),
+        path: path.resolve(__dirname, 'app/dist'),
         sourcePrefix: ''
     },
     plugins: [
@@ -76,6 +77,7 @@ const appConfig = {
 };
 
 const cdnConfig = {
+    name: 'cdn',
     ...commonConfig,
     entry: './src/index.js',
     output: {
