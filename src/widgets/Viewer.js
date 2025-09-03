@@ -130,7 +130,7 @@ function mixinViewer(viewer, universe, options) {
    * @param {Clock} clock 
    */
   const onTick = function (clock) {
-    if (defined(viewer._entityView && defined(viewer._trackedEntity)) && defined(viewer._trackedEntity.point2) ) { // fix for point primitive not tracking
+    if (defined(viewer._entityView && defined(viewer._trackedEntity)) && defined(viewer._trackedEntity.point2)) { // fix for point primitive not tracking
       viewer._entityView.update(clock.currentTime, viewer.boundingSphereScratch)
     }
   }
@@ -145,20 +145,20 @@ function mixinViewer(viewer, universe, options) {
    */
   scene.pick = function (windowPosition, width, height) {
 
-    if(viewer.cameraMode === "up") {
+    if (viewer.cameraMode === "up") {
       //note: don't override width and height, makes drillPick super slow
       const bwidth = scene.context.drawingBufferWidth / viewer.resolutionScale;
       const bheight = scene.context.drawingBufferHeight / viewer.resolutionScale;
       const aspectRatio = bwidth / bheight;
       let uv = new Cartesian2(windowPosition.x / bwidth * 2.0 - 1.0, windowPosition.y / bheight * 2.0 - 1.0);
 
-      if (aspectRatio > 1.0) { 
+      if (aspectRatio > 1.0) {
         uv.x *= aspectRatio;
       } else {
         uv.y /= aspectRatio;
-      }  
+      }
 
-      if(Cartesian2.magnitude(uv) >= 1.0) { //don't pick outside the sphere
+      if (Cartesian2.magnitude(uv) >= 1.0) { //don't pick outside the sphere
         return undefined
       }
 
@@ -172,7 +172,7 @@ function mixinViewer(viewer, universe, options) {
     let e = this._picking.drillPick(this, windowPosition, 100, width, height)
 
     for (let i = 0; i < e.length; i++) {
-      if (defined(e[i]) && defined(e[i].id)) {        
+      if (defined(e[i]) && defined(e[i].id)) {
         if (e[i].id.allowPicking !== false) {
           viewer.objectPickListener(e[i].id.simObjectRef, viewer.lastPicked)
           viewer.lastPicked = e[i].id.simObjectRef
@@ -186,7 +186,7 @@ function mixinViewer(viewer, universe, options) {
     }
 
     viewer.objectPickListener(undefined, viewer.lastPicked)
-    viewer.lastPicked = undefined    
+    viewer.lastPicked = undefined
 
     return undefined
   }
@@ -246,13 +246,13 @@ function mixinViewer(viewer, universe, options) {
 
       if (viewer.cameraMode === "sensor") {
 
-        scene.skyBox.show = false;      
+        scene.skyBox.show = false;
 
         camera.direction = new Cartesian3(0, 0, -1);
         camera.right = new Cartesian3(1, 0, 0);
         camera.up = new Cartesian3(0, 1, 0);
         camera.position = new Cartesian3(0, 0, 0)
-  
+
         Matrix4.multiply(universe.earth.worldToLocalTransform, viewer.trackedSensor.localToWorldTransform, transform)
         camera.frustum.fov = CMath.toRadians(viewer.trackedSensor.x_fov + viewer.trackedSensor.x_fov * 0.2)
       } else {
@@ -274,14 +274,14 @@ function mixinViewer(viewer, universe, options) {
       Matrix4.multiplyByPointAsVector(transform, camera.up, camera.upWC)
       camera._setTransform(transform)
 
-    // world view
+      // world view
     } else {
 
-      scene.globe.show = true    
+      scene.globe.show = true
       scene.skyAtmosphere.show = true;
       scene.fog.enabled = true;
       scene.globe.showGroundAtmosphere = true;
-      scene.skyBox.show = true;      
+      scene.skyBox.show = true;
 
       // 2D modes
       if (scene.mode !== SceneMode.SCENE3D) {
@@ -338,32 +338,32 @@ function mixinViewer(viewer, universe, options) {
    * Check if the universe needs to be updated.
    */
   function isDirty(time, picked) {
-  
+
     let dirty = false;
-    if(Math.abs(JulianDate.secondsDifference(lastUniverseUpdate, time)) != 0) {
+    if (Math.abs(JulianDate.secondsDifference(lastUniverseUpdate, time)) != 0) {
       JulianDate.clone(time, lastUniverseUpdate);
       dirty = true;
     }
-  
-    if(picked !== lastPickedUpdate) {
+
+    if (picked !== lastPickedUpdate) {
       lastPickedUpdate = picked;
       dirty = true;
     }
-  
+
     return dirty;
   }
-  
+
   /**
    * Pre update listener which updates the universe.
    */
   viewer.scene.preUpdate.addEventListener((scene, time) => {
-  
-    if(!isDirty(time, viewer.pickedObject)) {
+
+    if (!isDirty(time, viewer.pickedObject)) {
       return;
     }
-  
+
     universe.update(time)
-  });  
+  });
 
 
   ///////////////////
@@ -464,7 +464,7 @@ function mixinViewer(viewer, universe, options) {
       },
       simObjectRef: observatory
     })
-    viewer.addSensorVisualizer(observatory.site, observatory.gimbal, observatory.sensor)    
+    viewer.addSensorVisualizer(observatory.site, observatory.gimbal, observatory.sensor)
   }
 
   /**
@@ -491,16 +491,16 @@ function mixinViewer(viewer, universe, options) {
     const entity = viewer.entities.add(Object.assign(base, options))
 
     // create new point primitive
-    if(defined(point)) {
+    if (defined(point)) {
       entity.point2 = viewer.points.add(point)
       entity.point2.id = entity  // required for picking
-      entity.update = function(time, universe) {
+      entity.update = function (time, universe) {
         entity.point2.position = getObjectPositionInCesiumFrame(viewer, universe, object, time)
       }
       object.visualizer = entity
       object.updateListeners.push(entity);
     }
-  }  
+  }
 
   /**
    * Set the camera mode.
@@ -541,7 +541,7 @@ function mixinViewer(viewer, universe, options) {
       return;
     }
 
-  // Disable 3D grid visuals; we'll draw 2D rings/spokes instead in overlay
+    // Disable 3D grid visuals; we'll draw 2D rings/spokes instead in overlay
     viewer.sensorGrids.forEach(function (v) {
       v.show = false;
     });
@@ -565,7 +565,7 @@ function mixinViewer(viewer, universe, options) {
       try {
         const selEl = viewer._element.querySelector('.cesium-selection-wrapper');
         if (selEl) selEl.style.display = 'none';
-  } catch (e) { /* ignore */ }
+      } catch (e) { /* ignore */ }
     } else if (mode === "world") {
       // Restore previous state on return to world view
       const prev = viewer._prevPointsVisible;
@@ -576,7 +576,7 @@ function mixinViewer(viewer, universe, options) {
       try {
         const selEl = viewer._element.querySelector('.cesium-selection-wrapper');
         if (selEl) selEl.style.display = '';
-  } catch (e) { /* ignore */ }
+      } catch (e) { /* ignore */ }
     }
 
     viewer.cameraMode = mode;
@@ -584,7 +584,7 @@ function mixinViewer(viewer, universe, options) {
   };
 
   // Expose a simple toggle for the What's Up debug overlay
-  viewer.toggleUpDebug = function(force) {
+  viewer.toggleUpDebug = function (force) {
     viewer._showUpDebug = (typeof force === 'boolean') ? force : !viewer._showUpDebug;
   }
 
@@ -611,17 +611,17 @@ function mixinViewer(viewer, universe, options) {
         toolbar.addToggleButton('Label', labelOn, (checked) => {
 
           // create new point primitive
-          if(!defined(obj.visualizer.label2)) {
+          if (!defined(obj.visualizer.label2)) {
             obj.visualizer.label2 = viewer.labels.add({
               text: obj.name,
               font: '14px sans-serif',
             })
             obj.visualizer.label2.id = entity  // required for picking
-            obj.visualizer.label2.update = function(time, universe) {
+            obj.visualizer.label2.update = function (time, universe) {
               obj.visualizer.label2.position = getObjectPositionInCesiumFrame(viewer, universe, obj, time)
             }
             obj.updateListeners.push(entity.label2);
-          } else {       
+          } else {
             obj.visualizer.label2.show = checked
           }
         });
@@ -672,7 +672,7 @@ function mixinViewer(viewer, universe, options) {
     const infoBoxViewModel = infoBox.viewModel;
     viewer._eventHelper.add(
       infoBoxViewModel.cameraClicked,
-      (infoBoxViewModel) => { 
+      (infoBoxViewModel) => {
         viewer.referenceFrameView = ReferenceFrame.FIXED;
         if (
           infoBoxViewModel.isCameraTracking &&
@@ -887,17 +887,17 @@ void main (void)
 `;
 
   scene.postProcessStages.add(new PostProcessStage({
-    fragmentShader : fs,
-    uniforms : {
-        fov : function() {
-          return defined(camera.frustum.fov) ? camera.frustum.fov : 0.0;
-        },
-        mode : function() {
-          return viewer.cameraMode === "up" ? 0 : 1;
-        },
-        aspectRatio : function() {
-          return camera.frustum.aspectRatio;
-        }
+    fragmentShader: fs,
+    uniforms: {
+      fov: function () {
+        return defined(camera.frustum.fov) ? camera.frustum.fov : 0.0;
+      },
+      mode: function () {
+        return viewer.cameraMode === "up" ? 0 : 1;
+      },
+      aspectRatio: function () {
+        return camera.frustum.aspectRatio;
+      }
     }
   }));
 
@@ -948,7 +948,7 @@ void main (void)
       if (e.touches && e.touches.length) {
         const t = e.touches[0];
         // Synthesize event-like object for unified handling
-        handleOverlayPick({ clientX: t.clientX, clientY: t.clientY, preventDefault: () => e.preventDefault(), stopPropagation: () => e.stopPropagation(), stopImmediatePropagation: () => {} });
+        handleOverlayPick({ clientX: t.clientX, clientY: t.clientY, preventDefault: () => e.preventDefault(), stopPropagation: () => e.stopPropagation(), stopImmediatePropagation: () => { } });
       }
     }, { capture: true, passive: false });
   }
@@ -970,7 +970,7 @@ void main (void)
 
   function drawUpOverlay(time) {
     if (viewer.cameraMode !== 'up') {
-  if (viewer._upOverlayCanvas) {
+      if (viewer._upOverlayCanvas) {
         const ctx = viewer._upOverlayCtx;
         if (ctx) {
           ctx.clearRect(0, 0, viewer._element.clientWidth, viewer._element.clientHeight);
@@ -986,19 +986,19 @@ void main (void)
     const h = viewer._element.clientHeight | 0;
     ctx.clearRect(0, 0, w, h);
 
-  // Draw within the inscribed circle
-  const cx = w * 0.5;
-  const cy = h * 0.5;
-  const radiusPx = 0.5 * Math.min(w, h); // exact unit circle to match shader
+    // Draw within the inscribed circle
+    const cx = w * 0.5;
+    const cy = h * 0.5;
+    const radiusPx = 0.5 * Math.min(w, h); // exact unit circle to match shader
 
-  // Lens: equidistant (linear in zenith) for overlay
-  const thetaMax = viewer.camera.frustum.fov * 0.5;
+    // Lens: equidistant (linear in zenith) for overlay
+    const thetaMax = viewer.camera.frustum.fov * 0.5;
 
-  // Camera basis and position in world coordinates
-  const f = viewer.camera.directionWC;
-  const u = viewer.camera.upWC;
-  const r = viewer.camera.rightWC;
-  const cpos = viewer.camera.positionWC;
+    // Camera basis and position in world coordinates
+    const f = viewer.camera.directionWC;
+    const u = viewer.camera.upWC;
+    const r = viewer.camera.rightWC;
+    const cpos = viewer.camera.positionWC;
 
     // Optionally render a faint boundary
     ctx.save();
@@ -1009,10 +1009,10 @@ void main (void)
     ctx.stroke();
     ctx.restore();
 
-  // Always show cardinal axes and elevation labels (no rings)
-  drawUpDebugGrid(ctx, cx, cy, radiusPx, viewer.camera.frustum.fov);
+    // Always show cardinal axes and elevation labels (no rings)
+    drawUpDebugGrid(ctx, cx, cy, radiusPx, viewer.camera.frustum.fov);
 
-  // Draw satellites, map to normalized polar, and optionally annotate az/el
+    // Draw satellites, map to normalized polar, and optionally annotate az/el
     const sats = universe._trackables || [];
     viewer._upOverlayHits = [];
     let selPx = undefined, selPy = undefined, selR = undefined;
@@ -1036,21 +1036,21 @@ void main (void)
       const theta = Math.acos(Math.min(1.0, Math.max(-1.0, dz))); // angle from forward
       if (theta > thetaMax) continue; // outside FOV
 
-  // Normalized polar mapping (equidistant):
-  // r = theta / thetaMax
-  let rLin = Math.min(1.0, Math.max(0.0, theta / thetaMax));
-  // Apply adjustable overlay scale and clamp to unit circle
-  rLin = Math.min(1.0, Math.max(0.0, rLin * (viewer._upOverlayScale || 1.0)));
-  // angle measured clockwise from North: alpha = atan2(East, North) = atan2(dx, dy)
-  const alpha = Math.atan2(dx, dy);
-  const px = cx + radiusPx * rLin * Math.sin(alpha);
-  const py = cy - radiusPx * rLin * Math.cos(alpha);
+      // Normalized polar mapping (equidistant):
+      // r = theta / thetaMax
+      let rLin = Math.min(1.0, Math.max(0.0, theta / thetaMax));
+      // Apply adjustable overlay scale and clamp to unit circle
+      rLin = Math.min(1.0, Math.max(0.0, rLin * (viewer._upOverlayScale || 1.0)));
+      // angle measured clockwise from North: alpha = atan2(East, North) = atan2(dx, dy)
+      const alpha = Math.atan2(dx, dy);
+      const px = cx + radiusPx * rLin * Math.sin(alpha);
+      const py = cy - radiusPx * rLin * Math.cos(alpha);
 
-  // Size and color from point primitive if available
+      // Size and color from point primitive if available
       let size = 4;
       let colorCss = 'rgba(255,255,255,0.9)';
       const v = sat.visualizer;
-  if (v && v.point2) {
+      if (v && v.point2) {
         if (typeof v.point2.pixelSize === 'number') size = v.point2.pixelSize;
         const col = v.point2.color && (v.point2.color._value || v.point2.color);
         if (col && typeof col.toCssColorString === 'function') {
@@ -1091,9 +1091,9 @@ void main (void)
         }
       }
 
-  // Satellite az/el debug labels removed per design; elevation bands are labeled on the grid instead.
+      // Satellite az/el debug labels removed per design; elevation bands are labeled on the grid instead.
 
-  viewer._upOverlayHits.push({ sat, entity: v, x: px, y: py, r: size * 0.5 });
+      viewer._upOverlayHits.push({ sat, entity: v, x: px, y: py, r: size * 0.5 });
       if (viewer.selectedEntity && v === viewer.selectedEntity) {
         selPx = px; selPy = py; selR = Math.max(size * 0.5, 6);
       }
@@ -1128,7 +1128,7 @@ void main (void)
   }
 
   // Draw overlay after scene render (and after post-process), so it's not warped
-  scene.postRender.addEventListener(function(scene, time) {
+  scene.postRender.addEventListener(function (scene, time) {
     drawUpOverlay(time);
   });
 
@@ -1142,10 +1142,10 @@ void main (void)
     const h = rect.height;
     const cx = w * 0.5;
     const cy = h * 0.5;
-  const radiusPx = 0.5 * Math.min(w, h);
+    const radiusPx = 0.5 * Math.min(w, h);
 
     const thetaMax = viewer.camera.frustum.fov * 0.5;
-  const tHalf = Math.tan(thetaMax * 0.5);
+    const tHalf = Math.tan(thetaMax * 0.5);
 
     const f = viewer.camera.directionWC;
     const u = viewer.camera.upWC;
@@ -1169,14 +1169,14 @@ void main (void)
       const diry = nx * u.x + ny * u.y + nz * u.z;
       const dirz = nx * f.x + ny * f.y + nz * f.z;
       if (dirz <= 0.0) continue;
-  const theta = Math.acos(Math.min(1.0, Math.max(-1.0, dirz)));
-  if (theta > thetaMax) continue;
-  // Same equidistant mapping as draw: r = theta/thetaMax
-  let rLin = Math.min(1.0, Math.max(0.0, theta / thetaMax));
-  rLin = Math.min(1.0, Math.max(0.0, rLin * (viewer._upOverlayScale || 1.0)));
-  const alpha = Math.atan2(dirx, diry);
-  const px = cx + radiusPx * rLin * Math.sin(alpha);
-  const py = cy - radiusPx * rLin * Math.cos(alpha);
+      const theta = Math.acos(Math.min(1.0, Math.max(-1.0, dirz)));
+      if (theta > thetaMax) continue;
+      // Same equidistant mapping as draw: r = theta/thetaMax
+      let rLin = Math.min(1.0, Math.max(0.0, theta / thetaMax));
+      rLin = Math.min(1.0, Math.max(0.0, rLin * (viewer._upOverlayScale || 1.0)));
+      const alpha = Math.atan2(dirx, diry);
+      const px = cx + radiusPx * rLin * Math.sin(alpha);
+      const py = cy - radiusPx * rLin * Math.cos(alpha);
 
       let size = 4;
       let entity = sat.visualizer;
@@ -1186,7 +1186,7 @@ void main (void)
       const pickR = Math.max(size * 0.5, 6);
       const dx = x - px;
       const dy = y - py;
-      const d2 = dx*dx + dy*dy;
+      const d2 = dx * dx + dy * dy;
       if (d2 <= pickR * pickR && d2 < bestD2) {
         bestD2 = d2;
         best = { sat, entity };
@@ -1200,17 +1200,17 @@ void main (void)
     ctx.save();
     ctx.lineWidth = 1;
 
-  const thetaMax = 0.5 * fov; // max zenith angle shown
-  const elEdge = Math.max(0, 90 - thetaMax * CMath.DEGREES_PER_RADIAN);
+    const thetaMax = 0.5 * fov; // max zenith angle shown
+    const elEdge = Math.max(0, 90 - thetaMax * CMath.DEGREES_PER_RADIAN);
 
     // Elevation rings and labels within FOV (edge is elEdge)
     const rings = [80, 70, 60, 50, 40, 30, 20, 10];
     rings.filter((el) => el >= elEdge - 1e-3).forEach((el) => {
       const thetaDeg = 90 - el;
       // equidistant radius
-  let rNorm = Math.min(1, (thetaDeg * CMath.RADIANS_PER_DEGREE) / thetaMax);
-  rNorm = Math.min(1.0, Math.max(0.0, rNorm * (viewer._upOverlayScale || 1.0)));
-  const r = rNorm * radiusPx;
+      let rNorm = Math.min(1, (thetaDeg * CMath.RADIANS_PER_DEGREE) / thetaMax);
+      rNorm = Math.min(1.0, Math.max(0.0, rNorm * (viewer._upOverlayScale || 1.0)));
+      const r = rNorm * radiusPx;
       // Ring
       ctx.strokeStyle = 'rgba(255,255,255,0.12)';
       ctx.beginPath();
