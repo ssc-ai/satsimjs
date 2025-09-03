@@ -550,6 +550,16 @@ function mixinViewer(viewer, universe, options) {
       v.outline = mode === "world";
     });
 
+    // Hide Cesium point sprites in "up" mode (we draw a 2D overlay instead)
+    if (mode === "up") {
+      viewer._prevPointsVisible = viewer.points.show;
+      viewer.points.show = false;
+    } else if (mode === "world") {
+      // Restore previous state on return to world view
+      const prev = viewer._prevPointsVisible;
+      viewer.points.show = (prev === undefined) ? true : prev;
+    }
+
     viewer.cameraMode = mode;
     updateCamera(scene, viewer.clock.currentTime);
   };
@@ -785,41 +795,70 @@ function mixinViewer(viewer, universe, options) {
   // Add post process stage to fix wide fov distortion
   const fs = `
 uniform sampler2D colorTexture;
-uniform float fov;
-uniform int mode;
-uniform float aspectRatio;
-in vec2 v_textureCoordinates; // input coord is 0 to +1
-//const float fovTheta = 160.0 * 3.1415926535 / 180.0; // FOV's theta
-const float PI = 3.1415926535;
+uniform float fov;           // vertical FOV in radians (Cesium PerspectiveFrustum.fov)
+uniform int mode;            // 0 = What's Up (apply remap), 1 = pass-through
+uniform float aspectRatio;   // width / height
+in vec2 v_textureCoordinates; // input coord is 0..1
 
+// Map the rectilinear render (input) to an equidistant fisheye-like output
+// to counter strong rectilinear distortion at very wide FOVs. Use a
+// stereographic mapping (conformal) which better preserves local shapes
+// (circles remain circles locally), reducing the "squished dots" effect.
 void main (void)
-{   
+{
+    // Pass-through for non-"up" modes
     if (mode == 1) {
       out_FragColor = texture(colorTexture, v_textureCoordinates);
       return;
     }
 
-    vec2 uv = 2.0 * v_textureCoordinates - 1.0; // between -1 and +1
-    vec2 fov2 = vec2(fov, fov);
-    if (aspectRatio > 1.0) { 
-      uv.x *= aspectRatio;
-      // fov2.y /= aspectRatio;
-    } else {
-      uv.y /= aspectRatio;
-      // fov2.x *= aspectRatio;
-    }
-    float d = length(uv);
+    // NDC coordinates: -1..+1
+    vec2 uv = 2.0 * v_textureCoordinates - 1.0;
 
-    if (d < 0.95) {    
-      float z = sqrt(1.0 - uv.x * uv.x - uv.y * uv.y); // sphere eq: r^2 = x^2 + y^2 + z^2
-      float kx = 1.0 / (z * tan(fov2.x * 0.5));
-      float ky = 1.0 / (z * tan(fov2.y * 0.5));
-      vec4 c = texture(colorTexture, vec2(uv.x * kx, uv.y * ky) + 0.5); // between 0 and +1
-      out_FragColor = c;
+    // Make radius isotropic by accounting for aspect
+    vec2 uvA = uv;
+    if (aspectRatio > 1.0) {
+      uvA.x *= aspectRatio;
     } else {
-      uv = v_textureCoordinates;
-      vec4 c = texture(colorTexture, uv);
-      out_FragColor = vec4(c.rgb * 0.0, 1.0);
+      uvA.y /= aspectRatio;
+    }
+
+  float r = length(uvA);
+    // Outside unit circle -> black
+    if (r > 1.0) {
+      out_FragColor = vec4(0.0, 0.0, 0.0, 1.0);
+      return;
+    }
+
+  // Desired output mapping: stereographic (conformal)
+  // r_out = tan(theta/2) / tan(thetaMax/2)
+  // => theta = 2 * atan(r_out * tan(thetaMax/2))
+  float thetaMax = fov * 0.5;
+  float tHalf = tan(thetaMax * 0.5);
+  float theta = 2.0 * atan(r * tHalf);
+
+  // Source (rectilinear) radius in NDC for sampling the original image
+  // (rectilinear projection): r_src = tan(theta)/tan(thetaMax)
+  float rSrc = tan(theta) / tan(thetaMax);
+
+    // Direction from center (stable even when r ~ 0)
+    vec2 dir = (r > 0.0) ? (uvA / r) : vec2(0.0, 0.0);
+    vec2 srcA = dir * rSrc;
+
+    // Undo aspect scaling for sampling
+    if (aspectRatio > 1.0) {
+      srcA.x /= aspectRatio;
+    } else {
+      srcA.y *= aspectRatio;
+    }
+
+    vec2 texCoord = srcA * 0.5 + 0.5;
+
+    // Guard against any precision overshoot
+    if (texCoord.x < 0.0 || texCoord.x > 1.0 || texCoord.y < 0.0 || texCoord.y > 1.0) {
+      out_FragColor = vec4(0.0, 0.0, 0.0, 1.0);
+    } else {
+      out_FragColor = texture(colorTexture, texCoord);
     }
   }
 `;
@@ -838,6 +877,133 @@ void main (void)
         }
     }
   }));
+
+  ///////////////////
+  // "What's Up" 2D Overlay (preserve round dots)
+  ///////////////////
+
+  // Create overlay canvas above Cesium canvas
+  function ensureUpOverlay() {
+    if (viewer._upOverlayCanvas) return;
+    const canvas = document.createElement('canvas');
+    canvas.style.position = 'absolute';
+    canvas.style.top = '0';
+    canvas.style.left = '0';
+    canvas.style.width = '100%';
+    canvas.style.height = '100%';
+    canvas.style.pointerEvents = 'none';
+    canvas.style.zIndex = 10;
+    viewer._element.appendChild(canvas);
+    viewer._upOverlayCanvas = canvas;
+    viewer._upOverlayCtx = canvas.getContext('2d');
+  }
+
+  function resizeUpOverlay() {
+    if (!viewer._upOverlayCanvas) return;
+    const canvas = viewer._upOverlayCanvas;
+    const dpr = window.devicePixelRatio || 1;
+    const w = viewer._element.clientWidth | 0;
+    const h = viewer._element.clientHeight | 0;
+    if (canvas.width !== w * dpr || canvas.height !== h * dpr) {
+      canvas.width = Math.max(1, w * dpr);
+      canvas.height = Math.max(1, h * dpr);
+    }
+    const ctx = viewer._upOverlayCtx;
+    ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
+    ctx.clearRect(0, 0, w, h);
+  }
+
+  function drawUpOverlay(time) {
+    if (viewer.cameraMode !== 'up') {
+      if (viewer._upOverlayCanvas) {
+        const ctx = viewer._upOverlayCtx;
+        if (ctx) {
+          ctx.clearRect(0, 0, viewer._element.clientWidth, viewer._element.clientHeight);
+        }
+      }
+      return;
+    }
+    ensureUpOverlay();
+    resizeUpOverlay();
+    const canvas = viewer._upOverlayCanvas;
+    const ctx = viewer._upOverlayCtx;
+    const w = viewer._element.clientWidth | 0;
+    const h = viewer._element.clientHeight | 0;
+    ctx.clearRect(0, 0, w, h);
+
+    // Draw within the inscribed circle
+    const cx = w * 0.5;
+    const cy = h * 0.5;
+    const radiusPx = 0.5 * Math.min(w, h) * 0.98; // margin
+
+    // Lens: equisolid-angle (good shape preservation)
+    const thetaMax = viewer.camera.frustum.fov * 0.5;
+    const sinHalfMax = Math.sin(thetaMax * 0.5);
+
+  // Camera basis and position in world coordinates
+  const f = viewer.camera.directionWC;
+  const u = viewer.camera.upWC;
+  const r = viewer.camera.rightWC;
+  const cpos = viewer.camera.positionWC;
+
+    // Optionally render a faint boundary
+    ctx.save();
+    ctx.beginPath();
+    ctx.arc(cx, cy, radiusPx, 0, Math.PI * 2);
+    ctx.strokeStyle = 'rgba(255,255,255,0.06)';
+    ctx.lineWidth = 1;
+    ctx.stroke();
+    ctx.restore();
+
+    // Draw satellites
+    const sats = universe._trackables || [];
+    for (let i = 0; i < sats.length; i++) {
+      const sat = sats[i];
+      const spos = getObjectPositionInCesiumFrame(viewer, universe, sat, time);
+      const vx = spos.x - cpos.x;
+      const vy = spos.y - cpos.y;
+      const vz = spos.z - cpos.z;
+      // Project into camera basis
+      const x = vx * r.x + vy * r.y + vz * r.z;
+      const y = vx * u.x + vy * u.y + vz * u.z;
+      const z = vx * f.x + vy * f.y + vz * f.z;
+      const len = Math.sqrt(x*x + y*y + z*z);
+      if (len === 0) continue;
+      const nx = x / len, ny = y / len, nz = z / len;
+      if (nz <= 0.0) continue; // behind
+
+      const theta = Math.acos(Math.min(1.0, Math.max(-1.0, nz))); // angle from forward
+      if (theta > thetaMax) continue; // outside FOV
+
+      // Equisolid-angle mapping
+      const rOut = Math.sin(theta * 0.5) / (sinHalfMax + 1e-6);
+      const phi = Math.atan2(ny, nx);
+      const px = cx + radiusPx * rOut * Math.cos(phi);
+      const py = cy - radiusPx * rOut * Math.sin(phi);
+
+      // Size and color from point primitive if available
+      let size = 4;
+      let colorCss = 'rgba(255,255,255,0.9)';
+      const v = sat.visualizer;
+      if (v && v.point2) {
+        if (typeof v.point2.pixelSize === 'number') size = v.point2.pixelSize;
+        const col = v.point2.color && (v.point2.color._value || v.point2.color);
+        if (col && typeof col.toCssColorString === 'function') {
+          colorCss = col.toCssColorString();
+        }
+      }
+
+      ctx.beginPath();
+      ctx.arc(px, py, size * 0.5, 0, Math.PI * 2);
+      ctx.fillStyle = colorCss;
+      ctx.fill();
+    }
+  }
+
+  // Draw overlay after scene render (and after post-process), so it's not warped
+  scene.postRender.addEventListener(function(scene, time) {
+    drawUpOverlay(time);
+  });
 
   return viewer;
 }
