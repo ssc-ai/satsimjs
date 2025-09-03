@@ -75,7 +75,6 @@ function mixinViewer(viewer, universe, options) {
   viewer.labels = scene.primitives.add(new LabelCollection());
   viewer.coverageVisualizer = new CoverageGridVisualizer(viewer, universe);
   viewer._showUpDebug = true; // draw az/el grid and labels in What's Up view when true
-  viewer._upOverlayScale = 1.02; // fixed fudge factor to scale overlay radii in What's Up view
 
   viewer.BILLBOARD_SATELLITE = viewer.billboards.add({
     show: false,
@@ -147,26 +146,43 @@ function mixinViewer(viewer, universe, options) {
 
     if (viewer.cameraMode === "up") {
       //note: don't override width and height, makes drillPick super slow
-      const bwidth = scene.context.drawingBufferWidth / viewer.resolutionScale;
-      const bheight = scene.context.drawingBufferHeight / viewer.resolutionScale;
-      const aspectRatio = bwidth / bheight;
+      const bwidth = scene.canvas.clientWidth;
+      const bheight = scene.canvas.clientHeight;
+      const aspectRatio = bwidth / Math.max(1, bheight);
+      // NDC coordinates of click (CSS pixels)
       let uv = new Cartesian2(windowPosition.x / bwidth * 2.0 - 1.0, windowPosition.y / bheight * 2.0 - 1.0);
 
+      // Aspect handling to match shader: width-max crop for wide, inscribed for tall
+      let uvA = uv;
       if (aspectRatio > 1.0) {
-        uv.x *= aspectRatio;
-      } else {
-        uv.y /= aspectRatio;
+        uvA = new Cartesian2(uv.x, uv.y * aspectRatio);
+      } else if (aspectRatio < 1.0) {
+        uvA = new Cartesian2(uv.x, uv.y / aspectRatio);
       }
 
-      if (Cartesian2.magnitude(uv) >= 1.0) { //don't pick outside the sphere
-        return undefined
+      const r = Math.hypot(uvA.x, uvA.y);
+      if (r >= 1.0) { // outside fisheye disk
+        return undefined;
       }
 
-      let z = Math.sqrt(1.0 - uv.x * uv.x - uv.y * uv.y); // sphere eq: r^2 = x^2 + y^2 + z^2
-      let k = 1.0 / (z * Math.tan(camera.frustum.fov * 0.5));
-      uv.x = (uv.x * k) + 0.5;
-      uv.y = (uv.y * k) + 0.5;
-      windowPosition = new Cartesian2(bwidth * uv.x, bheight * uv.y)
+      // Equidistant mapping inverse: theta = r * thetaMax
+      const thetaMax = camera.frustum.fov * 0.5;
+      const theta = r * thetaMax;
+      const rSrc = Math.tan(theta) / Math.tan(thetaMax);
+
+      // Direction on uv plane
+      const dirx = r > 0 ? uvA.x / r : 0.0;
+      const diry = r > 0 ? uvA.y / r : 0.0;
+      let srcA_x = dirx * rSrc;
+      let srcA_y = diry * rSrc;
+
+      // Undo rectilinear anisotropy for sampling (x uses 1/aspect in perspective matrix)
+      srcA_x /= aspectRatio;
+
+      // Back to texture space 0..1
+      const texX = srcA_x * 0.5 + 0.5;
+      const texY = srcA_y * 0.5 + 0.5;
+      windowPosition = new Cartesian2(bwidth * texX, bheight * texY);
     }
 
     let e = this._picking.drillPick(this, windowPosition, 100, width, height)
@@ -818,6 +834,9 @@ function mixinViewer(viewer, universe, options) {
   }
 
   // Add post process stage to fix wide fov distortion
+  // TODO: Alignment for aspect>1.0 — 3D warp vs 2D overlay/picking still shows a small mismatch.
+  // Unify the aspect source (CSS vs drawing buffer) across shader, scene.pick, and overlay,
+  // and re-verify the x/=aspect anisotropy term against Cesium's projection.
   const fs = `
 uniform sampler2D colorTexture;
 uniform float fov;           // vertical FOV in radians (Cesium PerspectiveFrustum.fov)
@@ -826,8 +845,9 @@ uniform float aspectRatio;   // width / height
 in vec2 v_textureCoordinates; // input coord is 0..1
 
   // Map the rectilinear render (input) to a fisheye-like output to counter
-  // strong rectilinear distortion at very wide FOVs. Use a stereographic
-  // mapping (conformal) which preserves local shapes better.
+  // strong rectilinear distortion at very wide FOVs. Use an equidistant
+  // mapping so radius is linear in zenith angle, matching the 2D overlay.
+  // TODO: aspect>1.0 overlay alignment — confirm uv normalization and sampling match overlay math exactly.
 void main (void)
 {
     // Pass-through for non-"up" modes
@@ -839,41 +859,32 @@ void main (void)
     // NDC coordinates: -1..+1
     vec2 uv = 2.0 * v_textureCoordinates - 1.0;
 
-    // Make radius isotropic by accounting for aspect
-    vec2 uvA = uv;
-    if (aspectRatio > 1.0) {
-      uvA.x *= aspectRatio;
-    } else {
-      uvA.y /= aspectRatio;
-    }
+    // Aspect handling (width-max circle): normalize Y by aspect
+    vec2 uvA = vec2(uv.x, uv.y / aspectRatio);
 
-  float r = length(uvA);
+    float r = length(uvA);
     // Outside unit circle -> black
     if (r > 1.0) {
       out_FragColor = vec4(0.0, 0.0, 0.0, 1.0);
       return;
     }
 
-  // Desired output mapping: stereographic (conformal)
-  // r_out = tan(theta/2) / tan(thetaMax/2)
-  // => theta = 2 * atan(r_out * tan(thetaMax/2))
-  float thetaMax = fov * 0.5;
-  float theta = 2.0 * atan(r * tan(thetaMax * 0.5));
+    // Desired output mapping: equidistant (linear in zenith)
+    // r_out = theta / thetaMax
+    // => theta = r_out * thetaMax
+    float thetaMax = fov * 0.5;
+    float theta = r * thetaMax;
 
-  // Source (rectilinear) radius in NDC for sampling the original image
-  // (rectilinear projection): r_src = tan(theta)/tan(thetaMax)
-  float rSrc = tan(theta) / tan(thetaMax);
+    // Source (rectilinear) radius in NDC for sampling the original image
+    // (rectilinear projection): r_src = tan(theta)/tan(thetaMax)
+    float rSrc = tan(theta) / tan(thetaMax);
 
     // Direction from center (stable even when r ~ 0)
     vec2 dir = (r > 0.0) ? (uvA / r) : vec2(0.0, 0.0);
     vec2 srcA = dir * rSrc;
 
-    // Undo aspect scaling for sampling
-    if (aspectRatio > 1.0) {
-      srcA.x /= aspectRatio;
-    } else {
-      srcA.y *= aspectRatio;
-    }
+    // Undo rectilinear anisotropy for sampling (x uses 1/aspect in perspective matrix)
+    srcA.x /= aspectRatio;
 
     vec2 texCoord = srcA * 0.5 + 0.5;
 
@@ -896,7 +907,9 @@ void main (void)
         return viewer.cameraMode === "up" ? 0 : 1;
       },
       aspectRatio: function () {
-        return camera.frustum.aspectRatio;
+        const dbw = scene.context?.drawingBufferWidth;
+        const dbh = scene.context?.drawingBufferHeight;
+        return (dbw && dbh) ? (dbw / dbh) : camera.frustum.aspectRatio;
       }
     }
   }));
@@ -986,10 +999,10 @@ void main (void)
     const h = viewer._element.clientHeight | 0;
     ctx.clearRect(0, 0, w, h);
 
-    // Draw within the inscribed circle
     const cx = w * 0.5;
     const cy = h * 0.5;
-    const radiusPx = 0.5 * Math.min(w, h); // exact unit circle to match shader
+    const aspect = w / Math.max(1, h);
+    const radiusPx = aspect > 1.0 ? (0.5 * w) : (0.5 * Math.min(w, h)); // width-max for wide, inscribed otherwise
 
     // Lens: equidistant (linear in zenith) for overlay
     const thetaMax = viewer.camera.frustum.fov * 0.5;
@@ -1039,12 +1052,16 @@ void main (void)
       // Normalized polar mapping (equidistant):
       // r = theta / thetaMax
       let rLin = Math.min(1.0, Math.max(0.0, theta / thetaMax));
-      // Apply adjustable overlay scale and clamp to unit circle
-      rLin = Math.min(1.0, Math.max(0.0, rLin * (viewer._upOverlayScale || 1.0)));
       // angle measured clockwise from North: alpha = atan2(East, North) = atan2(dx, dy)
       const alpha = Math.atan2(dx, dy);
+      // Overlay uses pixel circle of radius w/2; no extra Y scaling
       const px = cx + radiusPx * rLin * Math.sin(alpha);
       const py = cy - radiusPx * rLin * Math.cos(alpha);
+
+      // When wide, crop vertically; skip drawing off-screen points
+      if (aspect > 1.0) {
+        if (px < 0 || px > w || py < 0 || py > h) continue;
+      }
 
       // Size and color from point primitive if available
       let size = 4;
@@ -1093,7 +1110,10 @@ void main (void)
 
       // Satellite az/el debug labels removed per design; elevation bands are labeled on the grid instead.
 
-      viewer._upOverlayHits.push({ sat, entity: v, x: px, y: py, r: size * 0.5 });
+      // Only add hits if visible (for wide, apply same crop)
+      if (aspect <= 1.0 || (px >= 0 && px <= w && py >= 0 && py <= h)) {
+        viewer._upOverlayHits.push({ sat, entity: v, x: px, y: py, r: size * 0.5 });
+      }
       if (viewer.selectedEntity && v === viewer.selectedEntity) {
         selPx = px; selPy = py; selR = Math.max(size * 0.5, 6);
       }
@@ -1142,10 +1162,10 @@ void main (void)
     const h = rect.height;
     const cx = w * 0.5;
     const cy = h * 0.5;
-    const radiusPx = 0.5 * Math.min(w, h);
+    const aspect = w / Math.max(1, h);
+    const radiusPx = aspect > 1.0 ? (0.5 * w) : (0.5 * Math.min(w, h));
 
     const thetaMax = viewer.camera.frustum.fov * 0.5;
-    const tHalf = Math.tan(thetaMax * 0.5);
 
     const f = viewer.camera.directionWC;
     const u = viewer.camera.upWC;
@@ -1173,10 +1193,14 @@ void main (void)
       if (theta > thetaMax) continue;
       // Same equidistant mapping as draw: r = theta/thetaMax
       let rLin = Math.min(1.0, Math.max(0.0, theta / thetaMax));
-      rLin = Math.min(1.0, Math.max(0.0, rLin * (viewer._upOverlayScale || 1.0)));
       const alpha = Math.atan2(dirx, diry);
       const px = cx + radiusPx * rLin * Math.sin(alpha);
       const py = cy - radiusPx * rLin * Math.cos(alpha);
+
+      // Apply vertical cropping in wide mode: skip off-screen candidates
+      if (aspect > 1.0) {
+        if (px < 0 || px > w || py < 0 || py > h) continue;
+      }
 
       let size = 4;
       let entity = sat.visualizer;
@@ -1209,7 +1233,6 @@ void main (void)
       const thetaDeg = 90 - el;
       // equidistant radius
       let rNorm = Math.min(1, (thetaDeg * CMath.RADIANS_PER_DEGREE) / thetaMax);
-      rNorm = Math.min(1.0, Math.max(0.0, rNorm * (viewer._upOverlayScale || 1.0)));
       const r = rNorm * radiusPx;
       // Ring
       ctx.strokeStyle = 'rgba(255,255,255,0.12)';
@@ -1225,14 +1248,14 @@ void main (void)
       ctx.fillText(label, cx + 6, cy - r);
     });
 
-    // Edge label if horizon isn’t visible at this FOV
-    if (elEdge > 0) {
-      ctx.fillStyle = 'rgba(255,255,255,0.8)';
-      ctx.font = '11px sans-serif';
-      ctx.textAlign = 'center';
-      ctx.textBaseline = 'bottom';
-      ctx.fillText(`edge el ${elEdge.toFixed(0)}\u00B0`, cx, cy - radiusPx + 3);
-    }
+    // // Edge label if horizon isn’t visible at this FOV
+    // if (elEdge > 0) {
+    //   ctx.fillStyle = 'rgba(255,255,255,0.8)';
+    //   ctx.font = '11px sans-serif';
+    //   ctx.textAlign = 'center';
+    //   ctx.textBaseline = 'bottom';
+    //   ctx.fillText(`edge el ${elEdge.toFixed(0)}\u00B0`, cx, cy - radiusPx + 3);
+    // }
 
     // Azimuth spokes every 10° (light), heavier every 30°, with cardinal letters
     for (let azDeg = 0; azDeg < 360; azDeg += 10) {
