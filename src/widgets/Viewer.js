@@ -1,4 +1,5 @@
-import { JulianDate, PointPrimitiveCollection, BillboardCollection, LabelCollection, Viewer, ImageryLayer, UrlTemplateImageryProvider, IonImageryProvider, defined, Math as CMath, Cartesian2, Cartesian3, Matrix4, Color, SceneMode, ReferenceFrame, defaultValue, PostProcessStage, EntityView, Entity, Clock, Camera } from "cesium"
+import { JulianDate, PointPrimitiveCollection, BillboardCollection, LabelCollection, Viewer, ImageryLayer, UrlTemplateImageryProvider, IonImageryProvider, defined, Math as CMath, Cartesian2, Cartesian3, Matrix4, Color, SceneMode, ReferenceFrame, defaultValue, PostProcessStage, EntityView, Entity, Clock, Camera, SceneTransforms } from "cesium"
+import { southEastZenithToAzEl } from "../engine/dynamics/gimbal.js"
 import InfoBox from "./InfoBox.js"
 import Toolbar from "./Toolbar.js"
 import SensorFieldOfRegardVisualizer from "../engine/cesium/SensorFieldOfRegardVisualizer.js"
@@ -73,6 +74,8 @@ function mixinViewer(viewer, universe, options) {
   viewer.points = scene.primitives.add(new PointPrimitiveCollection());
   viewer.labels = scene.primitives.add(new LabelCollection());
   viewer.coverageVisualizer = new CoverageGridVisualizer(viewer, universe);
+  viewer._showUpDebug = true; // draw az/el grid and labels in What's Up view when true
+  viewer._upOverlayScale = 1.02; // fixed fudge factor to scale overlay radii in What's Up view
 
   viewer.BILLBOARD_SATELLITE = viewer.billboards.add({
     show: false,
@@ -538,8 +541,9 @@ function mixinViewer(viewer, universe, options) {
       return;
     }
 
+  // Disable 3D grid visuals; we'll draw 2D rings/spokes instead in overlay
     viewer.sensorGrids.forEach(function (v) {
-      v.show = (mode === "up") && (viewer.trackedSensor === v.sensorRef);
+      v.show = false;
     });
 
     viewer.sensorForVisualizers.forEach(function (v) {
@@ -554,15 +558,35 @@ function mixinViewer(viewer, universe, options) {
     if (mode === "up") {
       viewer._prevPointsVisible = viewer.points.show;
       viewer.points.show = false;
+      // Hide label collection in up mode to avoid distorted 3D labels
+      viewer._prevLabelsVisible = viewer.labels.show;
+      viewer.labels.show = false;
+      // Also hide Cesium's default selection indicator (misaligned due to post-process warp)
+      try {
+        const selEl = viewer._element.querySelector('.cesium-selection-wrapper');
+        if (selEl) selEl.style.display = 'none';
+  } catch (e) { /* ignore */ }
     } else if (mode === "world") {
       // Restore previous state on return to world view
       const prev = viewer._prevPointsVisible;
       viewer.points.show = (prev === undefined) ? true : prev;
+      const prevLabels = viewer._prevLabelsVisible;
+      viewer.labels.show = (prevLabels === undefined) ? true : prevLabels;
+      // Restore selection indicator visibility
+      try {
+        const selEl = viewer._element.querySelector('.cesium-selection-wrapper');
+        if (selEl) selEl.style.display = '';
+  } catch (e) { /* ignore */ }
     }
 
     viewer.cameraMode = mode;
     updateCamera(scene, viewer.clock.currentTime);
   };
+
+  // Expose a simple toggle for the What's Up debug overlay
+  viewer.toggleUpDebug = function(force) {
+    viewer._showUpDebug = (typeof force === 'boolean') ? force : !viewer._showUpDebug;
+  }
 
   /**
    * Set the default selected toolbar.
@@ -756,6 +780,7 @@ function mixinViewer(viewer, universe, options) {
   ]);
 
 
+
   ///////////////////
   // Misc
   ///////////////////
@@ -800,10 +825,9 @@ uniform int mode;            // 0 = What's Up (apply remap), 1 = pass-through
 uniform float aspectRatio;   // width / height
 in vec2 v_textureCoordinates; // input coord is 0..1
 
-// Map the rectilinear render (input) to an equidistant fisheye-like output
-// to counter strong rectilinear distortion at very wide FOVs. Use a
-// stereographic mapping (conformal) which better preserves local shapes
-// (circles remain circles locally), reducing the "squished dots" effect.
+  // Map the rectilinear render (input) to a fisheye-like output to counter
+  // strong rectilinear distortion at very wide FOVs. Use a stereographic
+  // mapping (conformal) which preserves local shapes better.
 void main (void)
 {
     // Pass-through for non-"up" modes
@@ -834,8 +858,7 @@ void main (void)
   // r_out = tan(theta/2) / tan(thetaMax/2)
   // => theta = 2 * atan(r_out * tan(thetaMax/2))
   float thetaMax = fov * 0.5;
-  float tHalf = tan(thetaMax * 0.5);
-  float theta = 2.0 * atan(r * tHalf);
+  float theta = 2.0 * atan(r * tan(thetaMax * 0.5));
 
   // Source (rectilinear) radius in NDC for sampling the original image
   // (rectilinear projection): r_src = tan(theta)/tan(thetaMax)
@@ -891,11 +914,43 @@ void main (void)
     canvas.style.left = '0';
     canvas.style.width = '100%';
     canvas.style.height = '100%';
-    canvas.style.pointerEvents = 'none';
+    canvas.style.pointerEvents = 'none'; // let clicks fall through unless we capture them
     canvas.style.zIndex = 10;
     viewer._element.appendChild(canvas);
     viewer._upOverlayCanvas = canvas;
     viewer._upOverlayCtx = canvas.getContext('2d');
+
+    // Click picking: capture on container so non-hits pass through to widgets
+    function handleOverlayPick(ev) {
+      if (viewer.cameraMode !== 'up') return;
+      const res = pickUpOverlayAt(ev.clientX, ev.clientY);
+      if (res) {
+        viewer.selectedEntity = res.entity;
+        viewer.objectPickListener(res.sat, viewer.lastPicked);
+        viewer.lastPicked = res.sat;
+        viewer.pickedObject = res.sat;
+        ev.preventDefault();
+        ev.stopPropagation();
+        ev.stopImmediatePropagation?.();
+      } else {
+        viewer.pickedObject = undefined;
+      }
+      // else: let clicks continue to underlying widgets
+    }
+
+    const onPointerDownCapture = (ev) => handleOverlayPick(ev);
+    const onClickCapture = (ev) => handleOverlayPick(ev);
+
+    viewer._element.addEventListener('pointerdown', onPointerDownCapture, { capture: true, passive: false });
+    viewer._element.addEventListener('click', onClickCapture, { capture: true, passive: false });
+    viewer._element.addEventListener('touchstart', (e) => {
+      if (viewer.cameraMode !== 'up') return;
+      if (e.touches && e.touches.length) {
+        const t = e.touches[0];
+        // Synthesize event-like object for unified handling
+        handleOverlayPick({ clientX: t.clientX, clientY: t.clientY, preventDefault: () => e.preventDefault(), stopPropagation: () => e.stopPropagation(), stopImmediatePropagation: () => {} });
+      }
+    }, { capture: true, passive: false });
   }
 
   function resizeUpOverlay() {
@@ -915,7 +970,7 @@ void main (void)
 
   function drawUpOverlay(time) {
     if (viewer.cameraMode !== 'up') {
-      if (viewer._upOverlayCanvas) {
+  if (viewer._upOverlayCanvas) {
         const ctx = viewer._upOverlayCtx;
         if (ctx) {
           ctx.clearRect(0, 0, viewer._element.clientWidth, viewer._element.clientHeight);
@@ -931,14 +986,13 @@ void main (void)
     const h = viewer._element.clientHeight | 0;
     ctx.clearRect(0, 0, w, h);
 
-    // Draw within the inscribed circle
-    const cx = w * 0.5;
-    const cy = h * 0.5;
-    const radiusPx = 0.5 * Math.min(w, h) * 0.98; // margin
+  // Draw within the inscribed circle
+  const cx = w * 0.5;
+  const cy = h * 0.5;
+  const radiusPx = 0.5 * Math.min(w, h); // exact unit circle to match shader
 
-    // Lens: equisolid-angle (good shape preservation)
-    const thetaMax = viewer.camera.frustum.fov * 0.5;
-    const sinHalfMax = Math.sin(thetaMax * 0.5);
+  // Lens: equidistant (linear in zenith) for overlay
+  const thetaMax = viewer.camera.frustum.fov * 0.5;
 
   // Camera basis and position in world coordinates
   const f = viewer.camera.directionWC;
@@ -955,37 +1009,48 @@ void main (void)
     ctx.stroke();
     ctx.restore();
 
-    // Draw satellites
+  // Always show cardinal axes and elevation labels (no rings)
+  drawUpDebugGrid(ctx, cx, cy, radiusPx, viewer.camera.frustum.fov);
+
+  // Draw satellites, map to normalized polar, and optionally annotate az/el
     const sats = universe._trackables || [];
+    viewer._upOverlayHits = [];
+    let selPx = undefined, selPy = undefined, selR = undefined;
     for (let i = 0; i < sats.length; i++) {
       const sat = sats[i];
+      // Keep simulation and overlay in sync
+      sat.update(time, universe);
       const spos = getObjectPositionInCesiumFrame(viewer, universe, sat, time);
       const vx = spos.x - cpos.x;
       const vy = spos.y - cpos.y;
       const vz = spos.z - cpos.z;
-      // Project into camera basis
-      const x = vx * r.x + vy * r.y + vz * r.z;
-      const y = vx * u.x + vy * u.y + vz * u.z;
-      const z = vx * f.x + vy * f.y + vz * f.z;
-      const len = Math.sqrt(x*x + y*y + z*z);
+      const len = Math.hypot(vx, vy, vz);
       if (len === 0) continue;
-      const nx = x / len, ny = y / len, nz = z / len;
-      if (nz <= 0.0) continue; // behind
+      const nx = vx / len, ny = vy / len, nz = vz / len;
+      // Project into camera world basis
+      const dx = nx * r.x + ny * r.y + nz * r.z;
+      const dy = nx * u.x + ny * u.y + nz * u.z;
+      const dz = nx * f.x + ny * f.y + nz * f.z;
+      if (dz <= 0.0) continue; // behind
 
-      const theta = Math.acos(Math.min(1.0, Math.max(-1.0, nz))); // angle from forward
+      const theta = Math.acos(Math.min(1.0, Math.max(-1.0, dz))); // angle from forward
       if (theta > thetaMax) continue; // outside FOV
 
-      // Equisolid-angle mapping
-      const rOut = Math.sin(theta * 0.5) / (sinHalfMax + 1e-6);
-      const phi = Math.atan2(ny, nx);
-      const px = cx + radiusPx * rOut * Math.cos(phi);
-      const py = cy - radiusPx * rOut * Math.sin(phi);
+  // Normalized polar mapping (equidistant):
+  // r = theta / thetaMax
+  let rLin = Math.min(1.0, Math.max(0.0, theta / thetaMax));
+  // Apply adjustable overlay scale and clamp to unit circle
+  rLin = Math.min(1.0, Math.max(0.0, rLin * (viewer._upOverlayScale || 1.0)));
+  // angle measured clockwise from North: alpha = atan2(East, North) = atan2(dx, dy)
+  const alpha = Math.atan2(dx, dy);
+  const px = cx + radiusPx * rLin * Math.sin(alpha);
+  const py = cy - radiusPx * rLin * Math.cos(alpha);
 
-      // Size and color from point primitive if available
+  // Size and color from point primitive if available
       let size = 4;
       let colorCss = 'rgba(255,255,255,0.9)';
       const v = sat.visualizer;
-      if (v && v.point2) {
+  if (v && v.point2) {
         if (typeof v.point2.pixelSize === 'number') size = v.point2.pixelSize;
         const col = v.point2.color && (v.point2.color._value || v.point2.color);
         if (col && typeof col.toCssColorString === 'function') {
@@ -997,6 +1062,68 @@ void main (void)
       ctx.arc(px, py, size * 0.5, 0, Math.PI * 2);
       ctx.fillStyle = colorCss;
       ctx.fill();
+
+      // Draw overlay label if the object's label is enabled
+      if (v && v.label2 && v.label2.show) {
+        let labelText = sat?.name;
+        try {
+          const t = v.label2.text;
+          if (typeof t === 'string') {
+            labelText = t;
+          } else if (t && typeof t.getValue === 'function') {
+            labelText = t.getValue(time);
+          }
+        } catch (e) { /* ignore */ }
+        if (labelText) {
+          ctx.save();
+          ctx.font = '12px sans-serif';
+          ctx.textAlign = 'left';
+          ctx.textBaseline = 'middle';
+          const lx = px + Math.max(10, size * 0.75);
+          const ly = py - Math.max(8, size * 0.5);
+          // halo for readability
+          ctx.lineWidth = 3;
+          ctx.strokeStyle = 'rgba(0,0,0,0.6)';
+          ctx.strokeText(labelText, lx, ly);
+          ctx.fillStyle = 'rgba(255,255,255,0.95)';
+          ctx.fillText(labelText, lx, ly);
+          ctx.restore();
+        }
+      }
+
+  // Satellite az/el debug labels removed per design; elevation bands are labeled on the grid instead.
+
+  viewer._upOverlayHits.push({ sat, entity: v, x: px, y: py, r: size * 0.5 });
+      if (viewer.selectedEntity && v === viewer.selectedEntity) {
+        selPx = px; selPy = py; selR = Math.max(size * 0.5, 6);
+      }
+    }
+
+    // Draw selection crosshair on overlay using same mapping, if any selection exists
+    if (defined(viewer.selectedEntity) && selPx !== undefined) {
+      ctx.save();
+      ctx.strokeStyle = 'rgba(255,255,255,0.9)';
+      ctx.lineWidth = 1.25;
+      // Concentric rings
+      ctx.beginPath();
+      ctx.arc(selPx, selPy, selR + 3, 0, Math.PI * 2);
+      ctx.stroke();
+      ctx.beginPath();
+      ctx.arc(selPx, selPy, selR + 8, 0, Math.PI * 2);
+      ctx.stroke();
+      // Crosshair ticks
+      const tick = 6;
+      ctx.beginPath();
+      ctx.moveTo(selPx - (selR + 12), selPy);
+      ctx.lineTo(selPx - (selR + 4), selPy);
+      ctx.moveTo(selPx + (selR + 4), selPy);
+      ctx.lineTo(selPx + (selR + 12), selPy);
+      ctx.moveTo(selPx, selPy - (selR + 12));
+      ctx.lineTo(selPx, selPy - (selR + 4));
+      ctx.moveTo(selPx, selPy + (selR + 4));
+      ctx.lineTo(selPx, selPy + (selR + 12));
+      ctx.stroke();
+      ctx.restore();
     }
   }
 
@@ -1004,6 +1131,164 @@ void main (void)
   scene.postRender.addEventListener(function(scene, time) {
     drawUpOverlay(time);
   });
+
+  // Fresh hit-test at event time to improve picking reliability
+  function pickUpOverlayAt(clientX, clientY) {
+    if (viewer.cameraMode !== 'up') return undefined;
+    const rect = viewer._element.getBoundingClientRect();
+    const x = clientX - rect.left;
+    const y = clientY - rect.top;
+    const w = rect.width;
+    const h = rect.height;
+    const cx = w * 0.5;
+    const cy = h * 0.5;
+  const radiusPx = 0.5 * Math.min(w, h);
+
+    const thetaMax = viewer.camera.frustum.fov * 0.5;
+  const tHalf = Math.tan(thetaMax * 0.5);
+
+    const f = viewer.camera.directionWC;
+    const u = viewer.camera.upWC;
+    const r = viewer.camera.rightWC;
+    const cpos = viewer.camera.positionWC;
+
+    let best = undefined;
+    let bestD2 = Infinity;
+    const sats = universe._trackables || [];
+    const time = viewer.clock.currentTime;
+    for (let i = 0; i < sats.length; i++) {
+      const sat = sats[i];
+      const spos = getObjectPositionInCesiumFrame(viewer, universe, sat, time);
+      const vx = spos.x - cpos.x;
+      const vy = spos.y - cpos.y;
+      const vz = spos.z - cpos.z;
+      const len = Math.hypot(vx, vy, vz);
+      if (len === 0) continue;
+      const nx = vx / len, ny = vy / len, nz = vz / len;
+      const dirx = nx * r.x + ny * r.y + nz * r.z;
+      const diry = nx * u.x + ny * u.y + nz * u.z;
+      const dirz = nx * f.x + ny * f.y + nz * f.z;
+      if (dirz <= 0.0) continue;
+  const theta = Math.acos(Math.min(1.0, Math.max(-1.0, dirz)));
+  if (theta > thetaMax) continue;
+  // Same equidistant mapping as draw: r = theta/thetaMax
+  let rLin = Math.min(1.0, Math.max(0.0, theta / thetaMax));
+  rLin = Math.min(1.0, Math.max(0.0, rLin * (viewer._upOverlayScale || 1.0)));
+  const alpha = Math.atan2(dirx, diry);
+  const px = cx + radiusPx * rLin * Math.sin(alpha);
+  const py = cy - radiusPx * rLin * Math.cos(alpha);
+
+      let size = 4;
+      let entity = sat.visualizer;
+      if (entity && entity.point2) {
+        if (typeof entity.point2.pixelSize === 'number') size = entity.point2.pixelSize;
+      }
+      const pickR = Math.max(size * 0.5, 6);
+      const dx = x - px;
+      const dy = y - py;
+      const d2 = dx*dx + dy*dy;
+      if (d2 <= pickR * pickR && d2 < bestD2) {
+        bestD2 = d2;
+        best = { sat, entity };
+      }
+    }
+    return best;
+  }
+
+  // Draw annotations for What's Up overlay: cardinal ticks, elevation rings/labels, and azimuth spokes
+  function drawUpDebugGrid(ctx, cx, cy, radiusPx, fov) {
+    ctx.save();
+    ctx.lineWidth = 1;
+
+  const thetaMax = 0.5 * fov; // max zenith angle shown
+  const elEdge = Math.max(0, 90 - thetaMax * CMath.DEGREES_PER_RADIAN);
+
+    // Elevation rings and labels within FOV (edge is elEdge)
+    const rings = [80, 70, 60, 50, 40, 30, 20, 10];
+    rings.filter((el) => el >= elEdge - 1e-3).forEach((el) => {
+      const thetaDeg = 90 - el;
+      // equidistant radius
+  let rNorm = Math.min(1, (thetaDeg * CMath.RADIANS_PER_DEGREE) / thetaMax);
+  rNorm = Math.min(1.0, Math.max(0.0, rNorm * (viewer._upOverlayScale || 1.0)));
+  const r = rNorm * radiusPx;
+      // Ring
+      ctx.strokeStyle = 'rgba(255,255,255,0.12)';
+      ctx.beginPath();
+      ctx.arc(cx, cy, r, 0, Math.PI * 2);
+      ctx.stroke();
+      // Label (white)
+      ctx.fillStyle = 'rgba(255,255,255,0.85)';
+      ctx.font = '11px sans-serif';
+      ctx.textAlign = 'left';
+      ctx.textBaseline = 'middle';
+      const label = el === 0 ? `el ${el}\u00B0 (horizon)` : `el ${el}\u00B0`;
+      ctx.fillText(label, cx + 6, cy - r);
+    });
+
+    // Edge label if horizon isn’t visible at this FOV
+    if (elEdge > 0) {
+      ctx.fillStyle = 'rgba(255,255,255,0.8)';
+      ctx.font = '11px sans-serif';
+      ctx.textAlign = 'center';
+      ctx.textBaseline = 'bottom';
+      ctx.fillText(`edge el ${elEdge.toFixed(0)}\u00B0`, cx, cy - radiusPx + 3);
+    }
+
+    // Azimuth spokes every 10° (light), heavier every 30°, with cardinal letters
+    for (let azDeg = 0; azDeg < 360; azDeg += 10) {
+      const a = azDeg * CMath.RADIANS_PER_DEGREE;
+      const x = cx + radiusPx * Math.sin(a);
+      const y = cy - radiusPx * Math.cos(a);
+      ctx.beginPath();
+      ctx.moveTo(cx, cy);
+      ctx.lineWidth = (azDeg % 30 === 0) ? 1.25 : 0.75;
+      ctx.strokeStyle = 'rgba(255,255,255,0.10)';
+      ctx.lineTo(x, y);
+      ctx.stroke();
+    }
+
+    // Cardinal directions: N (0°), E (90°), S (180°), W (270°)
+    const cardinals = [
+      { name: 'N', azDeg: 0 },
+      { name: 'E', azDeg: 90 },
+      { name: 'S', azDeg: 180 },
+      { name: 'W', azDeg: 270 },
+    ];
+    cardinals.forEach((c) => {
+      // Neutral color for cardinal rays and labels
+      ctx.strokeStyle = 'rgba(255,255,255,0.14)';
+      ctx.fillStyle = 'rgba(255,255,255,0.8)';
+      const a = c.azDeg * CMath.RADIANS_PER_DEGREE;
+      const x = cx + radiusPx * Math.sin(a);
+      const y = cy - radiusPx * Math.cos(a);
+      ctx.beginPath();
+      ctx.moveTo(cx, cy);
+      ctx.lineWidth = 1.5;
+      ctx.lineTo(x, y);
+      ctx.stroke();
+      ctx.font = '12px sans-serif';
+      ctx.textAlign = 'center';
+      ctx.textBaseline = 'middle';
+      const lx = cx + (radiusPx + 12) * Math.sin(a);
+      const ly = cy - (radiusPx + 12) * Math.cos(a);
+      ctx.fillText(c.name, lx, ly);
+    });
+
+    // Azimuth numerals every 30°, skip cardinals (0/90/180/270) to reduce clutter
+    ctx.fillStyle = 'rgba(255,255,255,0.75)';
+    ctx.font = '11px sans-serif';
+    ctx.textAlign = 'center';
+    ctx.textBaseline = 'middle';
+    for (let azDeg = 0; azDeg < 360; azDeg += 30) {
+      if (azDeg % 90 === 0) continue; // skip where cardinal letters are shown
+      const a = azDeg * CMath.RADIANS_PER_DEGREE;
+      const lx = cx + (radiusPx + 22) * Math.sin(a);
+      const ly = cy - (radiusPx + 22) * Math.cos(a);
+      ctx.fillText(`${azDeg}\u00B0`, lx, ly);
+    }
+
+    ctx.restore();
+  }
 
   return viewer;
 }
