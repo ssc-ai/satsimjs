@@ -408,8 +408,8 @@ function mixinViewer(viewer, universe, options) {
       },
     ], cameraViewMenu)
 
-    // Grid for what's up view
-    viewer.sensorGrids.push(viewer.entities.add({
+    // Grid for what's up view (associate with this sensor)
+    const grid = viewer.entities.add({
       name: sensor.name + ' grid ',
       position: createObjectPositionProperty(site, universe, viewer),
       orientation: createObjectOrientationProperty(site, universe),
@@ -423,7 +423,9 @@ function mixinViewer(viewer, universe, options) {
       },
       show: false,
       allowPicking: false
-    }))
+    })
+    grid.sensorRef = sensor
+    viewer.sensorGrids.push(grid)
   };
 
   /**
@@ -537,7 +539,7 @@ function mixinViewer(viewer, universe, options) {
     }
 
     viewer.sensorGrids.forEach(function (v) {
-      v.show = mode === "up";
+      v.show = (mode === "up") && (viewer.trackedSensor === v.sensorRef);
     });
 
     viewer.sensorForVisualizers.forEach(function (v) {
