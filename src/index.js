@@ -1,4 +1,4 @@
-globalThis.SATSIM_VERSION = "0.9.0";
+globalThis.SATSIM_VERSION = "0.10.0";
 
 export { default as Universe } from './engine/Universe.js'
 
