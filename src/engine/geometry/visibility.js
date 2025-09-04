@@ -55,7 +55,9 @@ function getVisibility(universe, viewer, observatories, sat) {
   for (let observatory of observatories) {
     const localPos = new Cartesian3();
     const field_of_regard = observatory.sensor.field_of_regard;
-    sat.update(viewer.clock.currentTime, universe)
+    // Base time (current)
+    const t0 = viewer.clock.currentTime;
+    sat.update(t0, universe)
     observatory.site.transformPointFromWorld(sat.worldPosition, localPos);
     let [az, el, r] = southEastZenithToAzEl(localPos)
     let visible = false
@@ -67,12 +69,38 @@ function getVisibility(universe, viewer, observatories, sat) {
         }
       }
     }
+    // Compute instantaneous angular rate on the sky (arcsec/s) relative to observer
+    // Using omega = |r x v| / |r|^2 where r and v are relative position and velocity in world frame
+    let angRateArcsecPerSec = undefined;
+    try {
+      const rWorld = Cartesian3.subtract(
+        sat.worldPosition,
+        observatory.site.worldPosition,
+        new Cartesian3()
+      );
+      const vRel = Cartesian3.subtract(
+        sat.worldVelocity,
+        observatory.site.worldVelocity,
+        new Cartesian3()
+      );
+      const rMag = Cartesian3.magnitude(rWorld);
+      if (rMag > 0 && defined(vRel)) {
+        const cx = Cartesian3.cross(rWorld, vRel, new Cartesian3());
+        const omega = Cartesian3.magnitude(cx) / (rMag * rMag); // rad/s
+        const RAD2ARCSEC = 206264.80624709636; // arcsec per radian
+        angRateArcsecPerSec = omega * RAD2ARCSEC;
+      }
+    } catch (e) {
+      // leave undefined on error
+    }
+
     visibility.push({...{
       sensor: observatory.sensor.name,
       az,
       el,
       r,
-      visible
+      visible,
+      angRateArcsecPerSec
     }, ...calculateTargetBrightness(observatory.site, sat, universe.sun) } )
   }
   return visibility
