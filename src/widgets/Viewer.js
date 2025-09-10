@@ -75,7 +75,9 @@ function mixinViewer(viewer, universe, options) {
   viewer.labels = scene.primitives.add(new LabelCollection());
   viewer.coverageVisualizer = new CoverageGridVisualizer(viewer, universe);
 
-  viewer._labelsOn = false;
+  viewer.labelsAlwaysOn = false;
+  viewer.labelDistanceThresholdMeters = 5000000; // Distance threshold (meters) for showing labels when global labels are enabled
+  viewer.labelDistanceThresholdMetersSq = viewer.labelDistanceThresholdMeters * viewer.labelDistanceThresholdMeters;
 
 
   viewer.BILLBOARD_SATELLITE = viewer.billboards.add({
@@ -558,7 +560,7 @@ function mixinViewer(viewer, universe, options) {
       // Restore previous points, and apply global labels flag for label collection
       const prev = viewer._prevPointsVisible;
       viewer.points.show = (prev === undefined) ? true : prev;
-      viewer.labels.show = !!viewer._labelsOn;
+      viewer.labels.show = !!viewer.labelsOn;
       // Restore selection indicator visibility
       try {
         const selEl = viewer._element.querySelector('.cesium-selection-wrapper');
@@ -601,6 +603,15 @@ function mixinViewer(viewer, universe, options) {
             obj.visualizer.label2.id = entity  // required for picking
             obj.visualizer.label2.update = function (time, universe) {
               obj.visualizer.label2.position = getObjectPositionInCesiumFrame(viewer, universe, obj, time)
+              if (viewer.labelsOn) {
+                try {
+                  const camPos = viewer.camera.positionWC;
+                  const p = obj.visualizer.label2.position;
+                  if (camPos && p) {
+                    obj.visualizer.label2.show = Cartesian3.distanceSquared(camPos, p) < viewer.labelDistanceThresholdMetersSq;
+                  }
+                } catch (e) { /* ignore */ }
+              }
             }
             obj.visualizer.label2.show = checked
             try { obj.visualizer.label2.position = getObjectPositionInCesiumFrame(viewer, universe, obj, viewer.clock.currentTime) } catch (e) { /* ignore */ }
@@ -645,55 +656,70 @@ function mixinViewer(viewer, universe, options) {
    * @param {boolean} enabled
    */
   viewer.setAllLabelsEnabled = function (enabled) {
-    viewer._labelsOn = !!enabled;
-    // Keep label collection visible in world mode for per-entity toggles; hide in What's Up.
+    viewer.labelsOn = !!enabled;
     try { viewer.labels.show = viewer.cameraMode !== 'up'; } catch (e) { /* ignore */ }
 
+    if (!viewer.labelsOn) {
+      // Remove all existing labels to free primitives
+      const sats = universe._trackables || [];
+      for (let i = 0; i < sats.length; i++) {
+        const obj = sats[i];
+        const entity = obj && obj.visualizer;
+        if (!entity || !entity.label2) continue;
+        const lbl = entity.label2;
+        if (Array.isArray(obj.updateListeners)) {
+          const idx = obj.updateListeners.indexOf(lbl);
+          if (idx !== -1) obj.updateListeners.splice(idx, 1);
+        }
+        try { viewer.labels.remove(lbl); } catch (e) { /* ignore */ }
+        entity.label2 = undefined;
+      }
+    }
+  };
+
+  // Dynamic label culling/creation each tick when global labels are ON
+  const dynamicLabelTick = function () {
+    if (!viewer.labelsOn || viewer.cameraMode === 'up') return;
+    const camPos = viewer.camera.positionWC;
+    if (!camPos) return;
     const sats = universe._trackables || [];
     for (let i = 0; i < sats.length; i++) {
       const obj = sats[i];
       const entity = obj && obj.visualizer;
       if (!entity) continue;
-      if (viewer._labelsOn) {
-        // Ensure a label2 exists so overlay and 3D can reflect label state
-        if (!entity.label2) {
-          const lbl = viewer.labels.add({
-            text: obj.name,
-            font: '14px sans-serif',
-            show: false,
-          });
-          lbl.id = entity; // needed for picking
+      let lbl = entity.label2;
+      // Compute (or reuse) position
+      let pos;
+      try { pos = getObjectPositionInCesiumFrame(viewer, universe, obj, viewer.clock.currentTime); } catch (e) { continue; }
+      const inRange = Cartesian3.distanceSquared(camPos, pos) < viewer.labelDistanceThresholdMetersSq;
+      if (inRange) {
+        if (!lbl) {
+          lbl = viewer.labels.add({ text: obj.name, font: '14px sans-serif', show: true });
+          lbl.id = entity;
+          lbl.position = pos;
           lbl.update = function (time, uni) {
-            lbl.position = getObjectPositionInCesiumFrame(viewer, uni || universe, obj, time || viewer.clock.currentTime);
+            try {
+              lbl.position = getObjectPositionInCesiumFrame(viewer, uni || universe, obj, time || viewer.clock.currentTime);
+            } catch (e) { /* ignore */ }
           };
-          // initialize position once so it can render before first update tick
-          try { lbl.position = getObjectPositionInCesiumFrame(viewer, universe, obj, viewer.clock.currentTime); } catch (e) { /* ignore */ }
           entity.label2 = lbl;
           if (Array.isArray(obj.updateListeners)) obj.updateListeners.push(lbl);
+        } else {
+          lbl.position = pos;
+          lbl.show = true;
         }
-        entity.label2.show = true;
-      } else {
-        // Remove label primitive and detach from update listeners to improve performance
-        if (entity.label2) {
-          const lbl = entity.label2;
-          // detach listener
-          if (Array.isArray(obj.updateListeners)) {
-            const idx = obj.updateListeners.indexOf(lbl);
-            if (idx !== -1) obj.updateListeners.splice(idx, 1);
-          }
-          try { viewer.labels.remove(lbl); } catch (e) { /* ignore */ }
-          entity.label2 = undefined;
+      } else if (lbl) {
+        // Out of range: remove
+        if (Array.isArray(obj.updateListeners)) {
+          const idx = obj.updateListeners.indexOf(lbl);
+          if (idx !== -1) obj.updateListeners.splice(idx, 1);
         }
+        try { viewer.labels.remove(lbl); } catch (e) { /* ignore */ }
+        entity.label2 = undefined;
       }
     }
-
-    // Force an overlay redraw so labels update immediately in What's Up.
-    if (viewer._upOverlayCtx) {
-      const w = viewer._element.clientWidth | 0;
-      const h = viewer._element.clientHeight | 0;
-      try { viewer._upOverlayCtx.clearRect(0, 0, w, h); } catch (e) { /* ignore */ }
-    }
   };
+  viewer._eventHelper.add(viewer.clock.onTick, dynamicLabelTick, viewer);
 
 
 
@@ -1013,7 +1039,7 @@ void main (void)
     ctx.restore();
 
     // Always show cardinal axes and elevation labels (no rings)
-    drawUpDebugGrid(ctx, cx, cy, radiusPx, viewer.camera.frustum.fov);
+    drawUpGrid(ctx, cx, cy, radiusPx, viewer.camera.frustum.fov);
 
     // Draw 2D paths (trail/lead) for satellites if enabled
     // Note: We sample along the entity path's lead/trail time and project with the same equidistant mapping.
@@ -1151,15 +1177,20 @@ void main (void)
       ctx.fillStyle = colorCss;
       ctx.fill();
 
-      // Draw overlay label if the object's label is enabled
-      if (v && v.label2 && v.label2.show) {
+      // Draw overlay label:
+      // In What's Up mode, if global labels are ON, show every satellite name regardless of distance
+      // even if no 3D label primitive (label2) exists.
+      const globalShowAll = viewer.labelsOn;
+      if ((globalShowAll && viewer.cameraMode === 'up') || (v && v.label2 && v.label2.show)) {
         let labelText = sat?.name;
         try {
-          const t = v.label2.text;
-          if (typeof t === 'string') {
-            labelText = t;
-          } else if (t && typeof t.getValue === 'function') {
-            labelText = t.getValue(time);
+          if (v && v.label2 && v.label2.text) {
+            const t = v.label2.text;
+            if (typeof t === 'string') {
+              labelText = t;
+            } else if (t && typeof t.getValue === 'function') {
+              labelText = t.getValue(time);
+            }
           }
         } catch (e) { /* ignore */ }
         if (labelText) {
@@ -1289,7 +1320,7 @@ void main (void)
   }
 
   // Draw annotations for What's Up overlay: cardinal ticks, elevation rings/labels, and azimuth spokes
-  function drawUpDebugGrid(ctx, cx, cy, radiusPx, fov) {
+  function drawUpGrid(ctx, cx, cy, radiusPx, fov) {
     ctx.save();
     ctx.lineWidth = 1;
 
@@ -1304,7 +1335,7 @@ void main (void)
       let rNorm = Math.min(1, (thetaDeg * CMath.RADIANS_PER_DEGREE) / thetaMax);
       const r = rNorm * radiusPx;
       // Ring
-      ctx.strokeStyle = 'rgba(255,255,255,0.12)';
+      ctx.strokeStyle = 'rgba(255,255,255,0.3)';
       ctx.beginPath();
       ctx.arc(cx, cy, r, 0, Math.PI * 2);
       ctx.stroke();
@@ -1317,15 +1348,6 @@ void main (void)
       ctx.fillText(label, cx + 6, cy - r);
     });
 
-    // // Edge label if horizon isn’t visible at this FOV
-    // if (elEdge > 0) {
-    //   ctx.fillStyle = 'rgba(255,255,255,0.8)';
-    //   ctx.font = '11px sans-serif';
-    //   ctx.textAlign = 'center';
-    //   ctx.textBaseline = 'bottom';
-    //   ctx.fillText(`edge el ${elEdge.toFixed(0)}\u00B0`, cx, cy - radiusPx + 3);
-    // }
-
     // Azimuth spokes every 10° (light), heavier every 30°, with cardinal letters
     for (let azDeg = 0; azDeg < 360; azDeg += 10) {
       const a = azDeg * CMath.RADIANS_PER_DEGREE;
@@ -1334,7 +1356,7 @@ void main (void)
       ctx.beginPath();
       ctx.moveTo(cx, cy);
       ctx.lineWidth = (azDeg % 30 === 0) ? 1.25 : 0.75;
-      ctx.strokeStyle = 'rgba(255,255,255,0.10)';
+      ctx.strokeStyle = 'rgba(255,255,255,0.2)';
       ctx.lineTo(x, y);
       ctx.stroke();
     }
