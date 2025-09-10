@@ -74,7 +74,9 @@ function mixinViewer(viewer, universe, options) {
   viewer.points = scene.primitives.add(new PointPrimitiveCollection());
   viewer.labels = scene.primitives.add(new LabelCollection());
   viewer.coverageVisualizer = new CoverageGridVisualizer(viewer, universe);
-  viewer._showUpDebug = true; // draw az/el grid and labels in What's Up view when true
+
+  viewer._labelsOn = false;
+
 
   viewer.BILLBOARD_SATELLITE = viewer.billboards.add({
     show: false,
@@ -129,8 +131,13 @@ function mixinViewer(viewer, universe, options) {
    * @param {Clock} clock 
    */
   const onTick = function (clock) {
-    if (defined(viewer._entityView && defined(viewer._trackedEntity)) && defined(viewer._trackedEntity.point2)) { // fix for point primitive not tracking
-      viewer._entityView.update(clock.currentTime, viewer.boundingSphereScratch)
+    if (defined(viewer.cesiumWidget) && defined(viewer.cesiumWidget._trackedEntity)) {
+      const trackedEntity = viewer.cesiumWidget._trackedEntity;
+      if (defined(trackedEntity.point2)) { // fix for point primitive not tracking
+        if (defined(viewer.cesiumWidget._entityView)) {
+          viewer.cesiumWidget._entityView.update(clock.currentTime, viewer.boundingSphereScratch)
+        }
+      }
     }
   }
   viewer._eventHelper.add(viewer.clock.onTick, onTick, viewer);
@@ -145,44 +152,8 @@ function mixinViewer(viewer, universe, options) {
   scene.pick = function (windowPosition, width, height) {
 
     if (viewer.cameraMode === "up") {
-      //note: don't override width and height, makes drillPick super slow
-      const bwidth = scene.canvas.clientWidth;
-      const bheight = scene.canvas.clientHeight;
-      const aspectRatio = bwidth / Math.max(1, bheight);
-      // NDC coordinates of click (CSS pixels)
-      let uv = new Cartesian2(windowPosition.x / bwidth * 2.0 - 1.0, windowPosition.y / bheight * 2.0 - 1.0);
-
-      // Aspect handling to match shader: width-max crop for wide, inscribed for tall
-      let uvA = uv;
-      if (aspectRatio > 1.0) {
-        uvA = new Cartesian2(uv.x, uv.y * aspectRatio);
-      } else if (aspectRatio < 1.0) {
-        uvA = new Cartesian2(uv.x, uv.y / aspectRatio);
-      }
-
-      const r = Math.hypot(uvA.x, uvA.y);
-      if (r >= 1.0) { // outside fisheye disk
-        return undefined;
-      }
-
-      // Equidistant mapping inverse: theta = r * thetaMax
-      const thetaMax = camera.frustum.fov * 0.5;
-      const theta = r * thetaMax;
-      const rSrc = Math.tan(theta) / Math.tan(thetaMax);
-
-      // Direction on uv plane
-      const dirx = r > 0 ? uvA.x / r : 0.0;
-      const diry = r > 0 ? uvA.y / r : 0.0;
-      let srcA_x = dirx * rSrc;
-      let srcA_y = diry * rSrc;
-
-      // Undo rectilinear anisotropy for sampling (x uses 1/aspect in perspective matrix)
-      srcA_x /= aspectRatio;
-
-      // Back to texture space 0..1
-      const texX = srcA_x * 0.5 + 0.5;
-      const texY = srcA_y * 0.5 + 0.5;
-      windowPosition = new Cartesian2(bwidth * texX, bheight * texY);
+      // In What's Up, picking is handled by the 2D overlay; bypass Cesium picking.
+      return undefined;
     }
 
     let e = this._picking.drillPick(this, windowPosition, 100, width, height)
@@ -273,7 +244,8 @@ function mixinViewer(viewer, universe, options) {
         camera.frustum.fov = CMath.toRadians(viewer.trackedSensor.x_fov + viewer.trackedSensor.x_fov * 0.2)
       } else {
 
-        scene.skyBox.show = true;
+        // What's Up: 2D-only background (no 3D skybox or globe)
+        scene.skyBox.show = false;
 
         camera.direction = new Cartesian3(0, 0, 1);
         camera.right = new Cartesian3(0, 1, 0);
@@ -583,11 +555,10 @@ function mixinViewer(viewer, universe, options) {
         if (selEl) selEl.style.display = 'none';
       } catch (e) { /* ignore */ }
     } else if (mode === "world") {
-      // Restore previous state on return to world view
+      // Restore previous points, and apply global labels flag for label collection
       const prev = viewer._prevPointsVisible;
       viewer.points.show = (prev === undefined) ? true : prev;
-      const prevLabels = viewer._prevLabelsVisible;
-      viewer.labels.show = (prevLabels === undefined) ? true : prevLabels;
+      viewer.labels.show = !!viewer._labelsOn;
       // Restore selection indicator visibility
       try {
         const selEl = viewer._element.querySelector('.cesium-selection-wrapper');
@@ -598,11 +569,6 @@ function mixinViewer(viewer, universe, options) {
     viewer.cameraMode = mode;
     updateCamera(scene, viewer.clock.currentTime);
   };
-
-  // Expose a simple toggle for the What's Up debug overlay
-  viewer.toggleUpDebug = function (force) {
-    viewer._showUpDebug = (typeof force === 'boolean') ? force : !viewer._showUpDebug;
-  }
 
   /**
    * Set the default selected toolbar.
@@ -626,7 +592,7 @@ function mixinViewer(viewer, universe, options) {
         const labelOn = obj.visualizer.label2?.show
         toolbar.addToggleButton('Label', labelOn, (checked) => {
 
-          // create new point primitive
+          // create label if missing
           if (!defined(obj.visualizer.label2)) {
             obj.visualizer.label2 = viewer.labels.add({
               text: obj.name,
@@ -636,7 +602,9 @@ function mixinViewer(viewer, universe, options) {
             obj.visualizer.label2.update = function (time, universe) {
               obj.visualizer.label2.position = getObjectPositionInCesiumFrame(viewer, universe, obj, time)
             }
-            obj.updateListeners.push(entity.label2);
+            obj.visualizer.label2.show = checked
+            try { obj.visualizer.label2.position = getObjectPositionInCesiumFrame(viewer, universe, obj, viewer.clock.currentTime) } catch (e) { /* ignore */ }
+            obj.updateListeners.push(obj.visualizer.label2);
           } else {
             obj.visualizer.label2.show = checked
           }
@@ -668,6 +636,62 @@ function mixinViewer(viewer, universe, options) {
       });
     } else {
       visualizer.show = show;
+    }
+  };
+
+  /**
+   * Enable/disable all labels globally by toggling each trackable's label2.
+   * If a label doesn't exist yet, create it and hook up position updates.
+   * @param {boolean} enabled
+   */
+  viewer.setAllLabelsEnabled = function (enabled) {
+    viewer._labelsOn = !!enabled;
+    // Keep label collection visible in world mode for per-entity toggles; hide in What's Up.
+    try { viewer.labels.show = viewer.cameraMode !== 'up'; } catch (e) { /* ignore */ }
+
+    const sats = universe._trackables || [];
+    for (let i = 0; i < sats.length; i++) {
+      const obj = sats[i];
+      const entity = obj && obj.visualizer;
+      if (!entity) continue;
+      if (viewer._labelsOn) {
+        // Ensure a label2 exists so overlay and 3D can reflect label state
+        if (!entity.label2) {
+          const lbl = viewer.labels.add({
+            text: obj.name,
+            font: '14px sans-serif',
+            show: false,
+          });
+          lbl.id = entity; // needed for picking
+          lbl.update = function (time, uni) {
+            lbl.position = getObjectPositionInCesiumFrame(viewer, uni || universe, obj, time || viewer.clock.currentTime);
+          };
+          // initialize position once so it can render before first update tick
+          try { lbl.position = getObjectPositionInCesiumFrame(viewer, universe, obj, viewer.clock.currentTime); } catch (e) { /* ignore */ }
+          entity.label2 = lbl;
+          if (Array.isArray(obj.updateListeners)) obj.updateListeners.push(lbl);
+        }
+        entity.label2.show = true;
+      } else {
+        // Remove label primitive and detach from update listeners to improve performance
+        if (entity.label2) {
+          const lbl = entity.label2;
+          // detach listener
+          if (Array.isArray(obj.updateListeners)) {
+            const idx = obj.updateListeners.indexOf(lbl);
+            if (idx !== -1) obj.updateListeners.splice(idx, 1);
+          }
+          try { viewer.labels.remove(lbl); } catch (e) { /* ignore */ }
+          entity.label2 = undefined;
+        }
+      }
+    }
+
+    // Force an overlay redraw so labels update immediately in What's Up.
+    if (viewer._upOverlayCtx) {
+      const w = viewer._element.clientWidth | 0;
+      const h = viewer._element.clientHeight | 0;
+      try { viewer._upOverlayCtx.clearRect(0, 0, w, h); } catch (e) { /* ignore */ }
     }
   };
 
@@ -745,6 +769,10 @@ function mixinViewer(viewer, universe, options) {
   const satButton = toolbar.addToggleButton('Satellites', true, (checked) => {
     viewer.points.show = checked;
   });
+  const labelsButton = toolbar.addToggleButton('Labels', false, (checked) => {
+    viewer.setAllLabelsEnabled(checked);
+  });
+  // (2D-only Up toggle removed; What's Up is always 2D-only)
   toolbar.addSeparator();
   const cameraViewMenu = toolbar.addToolbarMenu([
     {
@@ -795,6 +823,8 @@ function mixinViewer(viewer, universe, options) {
     },
   ]);
 
+  // (Fudge slider and mode menu removed)
+
 
 
   ///////////////////
@@ -833,67 +863,25 @@ function mixinViewer(viewer, universe, options) {
     controller.enableLook = state.enableLook;
   }
 
-  // Add post process stage to fix wide fov distortion
-  // TODO: Alignment for aspect>1.0 — 3D warp vs 2D overlay/picking still shows a small mismatch.
-  // Unify the aspect source (CSS vs drawing buffer) across shader, scene.pick, and overlay,
-  // and re-verify the x/=aspect anisotropy term against Cesium's projection.
+  // Post process stage: in What's Up mode, blank the 3D background so only the 2D overlay is visible.
   const fs = `
 uniform sampler2D colorTexture;
-uniform float fov;           // vertical FOV in radians (Cesium PerspectiveFrustum.fov)
-uniform int mode;            // 0 = What's Up (apply remap), 1 = pass-through
-uniform float aspectRatio;   // width / height
+uniform float fov;           // kept for compatibility (unused when blanking)
+uniform int mode;            // 0 = What's Up (blank), 1 = pass-through
+uniform float aspectRatio;   // kept for compatibility (unused when blanking)
 in vec2 v_textureCoordinates; // input coord is 0..1
 
-  // Map the rectilinear render (input) to a fisheye-like output to counter
-  // strong rectilinear distortion at very wide FOVs. Use an equidistant
-  // mapping so radius is linear in zenith angle, matching the 2D overlay.
-  // TODO: aspect>1.0 overlay alignment — confirm uv normalization and sampling match overlay math exactly.
+  // In What's Up mode, fully disable 3D by outputting a solid background.
 void main (void)
 {
-    // Pass-through for non-"up" modes
-    if (mode == 1) {
-      out_FragColor = texture(colorTexture, v_textureCoordinates);
-      return;
-    }
-
-    // NDC coordinates: -1..+1
-    vec2 uv = 2.0 * v_textureCoordinates - 1.0;
-
-    // Aspect handling (width-max circle): normalize Y by aspect
-    vec2 uvA = vec2(uv.x, uv.y / aspectRatio);
-
-    float r = length(uvA);
-    // Outside unit circle -> black
-    if (r > 1.0) {
+    // mode == 0 => What's Up (blank background)
+    if (mode == 0) {
       out_FragColor = vec4(0.0, 0.0, 0.0, 1.0);
       return;
     }
 
-    // Desired output mapping: equidistant (linear in zenith)
-    // r_out = theta / thetaMax
-    // => theta = r_out * thetaMax
-    float thetaMax = fov * 0.5;
-    float theta = r * thetaMax;
-
-    // Source (rectilinear) radius in NDC for sampling the original image
-    // (rectilinear projection): r_src = tan(theta)/tan(thetaMax)
-    float rSrc = tan(theta) / tan(thetaMax);
-
-    // Direction from center (stable even when r ~ 0)
-    vec2 dir = (r > 0.0) ? (uvA / r) : vec2(0.0, 0.0);
-    vec2 srcA = dir * rSrc;
-
-    // Undo rectilinear anisotropy for sampling (x uses 1/aspect in perspective matrix)
-    srcA.x /= aspectRatio;
-
-    vec2 texCoord = srcA * 0.5 + 0.5;
-
-    // Guard against any precision overshoot
-    if (texCoord.x < 0.0 || texCoord.x > 1.0 || texCoord.y < 0.0 || texCoord.y > 1.0) {
-      out_FragColor = vec4(0.0, 0.0, 0.0, 1.0);
-    } else {
-      out_FragColor = texture(colorTexture, texCoord);
-    }
+    // mode == 1 => pass-through (normal 3D rendering)
+    out_FragColor = texture(colorTexture, v_textureCoordinates);
   }
 `;
 
@@ -904,13 +892,15 @@ void main (void)
         return defined(camera.frustum.fov) ? camera.frustum.fov : 0.0;
       },
       mode: function () {
-        return viewer.cameraMode === "up" ? 0 : 1;
+        // In What's Up, always blank the 3D background (2D-only)
+        if (viewer.cameraMode === "up") return 0;
+        return 1;
       },
       aspectRatio: function () {
         const dbw = scene.context?.drawingBufferWidth;
         const dbh = scene.context?.drawingBufferHeight;
         return (dbw && dbh) ? (dbw / dbh) : camera.frustum.aspectRatio;
-      }
+      },
     }
   }));
 
@@ -1002,7 +992,7 @@ void main (void)
     const cx = w * 0.5;
     const cy = h * 0.5;
     const aspect = w / Math.max(1, h);
-    const radiusPx = aspect > 1.0 ? (0.5 * w) : (0.5 * Math.min(w, h)); // width-max for wide, inscribed otherwise
+    const radiusPx = 0.5 * Math.min(w, h); // always inscribed
 
     // Lens: equidistant (linear in zenith) for overlay
     const thetaMax = viewer.camera.frustum.fov * 0.5;
@@ -1025,8 +1015,92 @@ void main (void)
     // Always show cardinal axes and elevation labels (no rings)
     drawUpDebugGrid(ctx, cx, cy, radiusPx, viewer.camera.frustum.fov);
 
-    // Draw satellites, map to normalized polar, and optionally annotate az/el
+    // Draw 2D paths (trail/lead) for satellites if enabled
+    // Note: We sample along the entity path's lead/trail time and project with the same equidistant mapping.
     const sats = universe._trackables || [];
+    const now = time;
+    for (let i = 0; i < sats.length; i++) {
+      const sat = sats[i];
+      const v = sat.visualizer;
+      if (!v || !v.path) continue;
+      // Check if path is enabled
+      let showPath = false;
+      try {
+        const sp = v.path.show;
+        showPath = !!(sp && typeof sp.getValue === 'function' ? sp.getValue(now) : sp);
+      } catch (e) { /* ignore */ }
+      if (!showPath) continue;
+
+      // Read path parameters with safe fallbacks
+      const getVal = (p, def) => {
+        try { return (p && typeof p.getValue === 'function') ? p.getValue(now) : (p ?? def); } catch (e) { return def; }
+      };
+      const leadSec = Math.max(0, getVal(v.path.leadTime, 0));
+      const trailSec = Math.max(0, getVal(v.path.trailTime, 0));
+      let stepSec = Math.max(1, getVal(v.path.resolution, 30));
+      const maxSamples = 300; // cap for performance per satellite
+      const totalSec = leadSec + trailSec;
+      const estSamples = Math.ceil(totalSec / stepSec) + 1;
+      if (estSamples > maxSamples && totalSec > 0) {
+        stepSec = Math.max(stepSec, totalSec / maxSamples);
+      }
+
+      // Stroke style from point color, dimmed alpha for path
+      let pathStroke = 'rgba(255,255,255,0.35)';
+      let width = Math.max(0.75, getVal(v.path.width, 1));
+      try {
+        const col = v.point2 && (v.point2.color && (v.point2.color._value || v.point2.color));
+        if (col && typeof col.withAlpha === 'function' && typeof col.toCssColorString === 'function') {
+          pathStroke = col.withAlpha(0.35).toCssColorString();
+        }
+      } catch (e) { /* ignore */ }
+
+      ctx.save();
+      ctx.lineWidth = width;
+      ctx.strokeStyle = pathStroke;
+
+      // Sample from -trail to +lead relative to now
+      let started = false;
+      let open = false;
+      const jdScratch = new JulianDate();
+      const startOffset = -trailSec;
+      const endOffset = leadSec;
+      for (let dt = startOffset; dt <= endOffset + 1e-6; dt += stepSec) {
+        const tSample = JulianDate.addSeconds(now, dt, jdScratch);
+        // Update sat to sample time and project
+        sat.update(tSample, universe);
+        const spos = getObjectPositionInCesiumFrame(viewer, universe, sat, tSample);
+        const vx = spos.x - cpos.x;
+        const vy = spos.y - cpos.y;
+        const vz = spos.z - cpos.z;
+        const len = Math.hypot(vx, vy, vz);
+        if (len === 0) { if (open) { ctx.stroke(); open = false; } started = false; continue; }
+        const nx = vx / len, ny = vy / len, nz = vz / len;
+        const dx = nx * r.x + ny * r.y + nz * r.z;
+        const dy = nx * u.x + ny * u.y + nz * u.z;
+        const dz = nx * f.x + ny * f.y + nz * f.z;
+        if (dz <= 0.0) { if (open) { ctx.stroke(); open = false; } started = false; continue; }
+        const theta = Math.acos(Math.min(1.0, Math.max(-1.0, dz)));
+        if (theta > thetaMax) { if (open) { ctx.stroke(); open = false; } started = false; continue; }
+        // Map to overlay
+        const rLin = Math.min(1.0, Math.max(0.0, theta / thetaMax));
+        const alpha = Math.atan2(dx, dy);
+        const px = cx + radiusPx * rLin * Math.sin(alpha);
+        const py = cy - radiusPx * rLin * Math.cos(alpha);
+        if (!started) {
+          ctx.beginPath();
+          ctx.moveTo(px, py);
+          started = true; open = true;
+        } else {
+          ctx.lineTo(px, py);
+        }
+      }
+      if (open) { ctx.stroke(); open = false; }
+      ctx.restore();
+    }
+
+    // Draw satellites, map to normalized polar, and optionally annotate az/el
+    // (reuse sats array)
     viewer._upOverlayHits = [];
     let selPx = undefined, selPy = undefined, selR = undefined;
     for (let i = 0; i < sats.length; i++) {
@@ -1049,8 +1123,7 @@ void main (void)
       const theta = Math.acos(Math.min(1.0, Math.max(-1.0, dz))); // angle from forward
       if (theta > thetaMax) continue; // outside FOV
 
-      // Normalized polar mapping (equidistant):
-      // r = theta / thetaMax
+      // Normalized polar mapping (equidistant): r = theta / thetaMax (no 2D fudge)
       let rLin = Math.min(1.0, Math.max(0.0, theta / thetaMax));
       // angle measured clockwise from North: alpha = atan2(East, North) = atan2(dx, dy)
       const alpha = Math.atan2(dx, dy);
@@ -1058,10 +1131,8 @@ void main (void)
       const px = cx + radiusPx * rLin * Math.sin(alpha);
       const py = cy - radiusPx * rLin * Math.cos(alpha);
 
-      // When wide, crop vertically; skip drawing off-screen points
-      if (aspect > 1.0) {
-        if (px < 0 || px > w || py < 0 || py > h) continue;
-      }
+      // Skip drawing if computed position falls outside the viewport (safety)
+      if (px < 0 || px > w || py < 0 || py > h) continue;
 
       // Size and color from point primitive if available
       let size = 4;
@@ -1110,8 +1181,8 @@ void main (void)
 
       // Satellite az/el debug labels removed per design; elevation bands are labeled on the grid instead.
 
-      // Only add hits if visible (for wide, apply same crop)
-      if (aspect <= 1.0 || (px >= 0 && px <= w && py >= 0 && py <= h)) {
+      // Only add hits if visible
+      if (px >= 0 && px <= w && py >= 0 && py <= h) {
         viewer._upOverlayHits.push({ sat, entity: v, x: px, y: py, r: size * 0.5 });
       }
       if (viewer.selectedEntity && v === viewer.selectedEntity) {
@@ -1163,7 +1234,7 @@ void main (void)
     const cx = w * 0.5;
     const cy = h * 0.5;
     const aspect = w / Math.max(1, h);
-    const radiusPx = aspect > 1.0 ? (0.5 * w) : (0.5 * Math.min(w, h));
+    const radiusPx = 0.5 * Math.min(w, h);
 
     const thetaMax = viewer.camera.frustum.fov * 0.5;
 
@@ -1191,16 +1262,14 @@ void main (void)
       if (dirz <= 0.0) continue;
       const theta = Math.acos(Math.min(1.0, Math.max(-1.0, dirz)));
       if (theta > thetaMax) continue;
-      // Same equidistant mapping as draw: r = theta/thetaMax
+      // Same equidistant mapping as draw: r = theta/thetaMax (no 2D fudge)
       let rLin = Math.min(1.0, Math.max(0.0, theta / thetaMax));
       const alpha = Math.atan2(dirx, diry);
       const px = cx + radiusPx * rLin * Math.sin(alpha);
       const py = cy - radiusPx * rLin * Math.cos(alpha);
 
-      // Apply vertical cropping in wide mode: skip off-screen candidates
-      if (aspect > 1.0) {
-        if (px < 0 || px > w || py < 0 || py > h) continue;
-      }
+      // Skip off-screen candidates for robustness
+      if (px < 0 || px > w || py < 0 || py > h) continue;
 
       let size = 4;
       let entity = sat.visualizer;
@@ -1231,7 +1300,7 @@ void main (void)
     const rings = [80, 70, 60, 50, 40, 30, 20, 10];
     rings.filter((el) => el >= elEdge - 1e-3).forEach((el) => {
       const thetaDeg = 90 - el;
-      // equidistant radius
+      // equidistant radius (no 2D fudge)
       let rNorm = Math.min(1, (thetaDeg * CMath.RADIANS_PER_DEGREE) / thetaMax);
       const r = rNorm * radiusPx;
       // Ring
