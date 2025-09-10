@@ -4,24 +4,19 @@
     <meta charset="utf-8">
     <title>SatSim CDN Example</title>
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <style>
-        html, body, #cesiumContainer {
-            width: 100%; height: 100%; margin: 0; padding: 0; overflow: hidden;
-            font-family: sans-serif;
-        }
-    </style>
-    
     <script>
         // Use absolute paths so Cesium asset resolution is correct from any document location.
         // This must be set before loading the satsim bundle.
-        window.CESIUM_BASE_URL = 'https://cdn.jsdelivr.net/npm/satsim@0.9.0/dist/';
+        window.CESIUM_BASE_URL = '/dist/';
     </script>
     
     <!-- Load Cesium CSS from local build (absolute path) -->
-    <link href="https://cdn.jsdelivr.net/npm/satsim@0.9.0/dist/Widgets/widgets.css" rel="stylesheet">
+    <link href="/dist/Widgets/widgets.css" rel="stylesheet">
+    <link href="index.css" rel="stylesheet">
     
     <!-- Load SatSim from local CDN build (includes Cesium) -->
-    <script src="https://cdn.jsdelivr.net/npm/satsim@0.9.0/dist/satsim.js"></script>
+    <script src="/dist/satsim.js"></script>
+
 </head>
 <body>
     <div id="cesiumContainer"></div>
