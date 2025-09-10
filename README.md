@@ -1,7 +1,7 @@
 SatSim JS
 =========
 
-SatSim source code was developed under contract with ARFL/RDSM, and is approved for public release under Public Affairs release approval #AFRL-2022-1116.
+SatSim source code was developed under contract with AFRL/RDSM, and is approved for public release under Public Affairs release approval #AFRL-2022-1116.
 
 ![screenshot](screenshot.jpg "screenshot")
 
