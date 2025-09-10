@@ -14,14 +14,14 @@
     <script>
         // Use absolute paths so Cesium asset resolution is correct from any document location.
         // This must be set before loading the satsim bundle.
-        window.CESIUM_BASE_URL = '/dist/';
+        window.CESIUM_BASE_URL = 'https://cdn.jsdelivr.net/npm/satsim@0.9.0/dist/';
     </script>
     
     <!-- Load Cesium CSS from local build (absolute path) -->
-    <link href="/dist/Widgets/widgets.css" rel="stylesheet">
+    <link href="https://cdn.jsdelivr.net/npm/satsim@0.9.0/dist/Widgets/widgets.css" rel="stylesheet">
     
     <!-- Load SatSim from local CDN build (includes Cesium) -->
-    <script src="/dist/satsim.js"></script>
+    <script src="https://cdn.jsdelivr.net/npm/satsim@0.9.0/dist/satsim.js"></script>
 </head>
 <body>
     <div id="cesiumContainer"></div>
