@@ -1,4 +1,4 @@
-import { JulianDate, PointPrimitiveCollection, BillboardCollection, LabelCollection, Viewer, ImageryLayer, UrlTemplateImageryProvider, IonImageryProvider, defined, Math as CMath, Cartesian2, Cartesian3, Matrix4, Color, SceneMode, ReferenceFrame, defaultValue, PostProcessStage, EntityView, Entity, Clock, Camera, SceneTransforms } from "cesium"
+import { JulianDate, PointPrimitiveCollection, BillboardCollection, LabelCollection, Viewer, ImageryLayer, UrlTemplateImageryProvider, IonImageryProvider, buildModuleUrl, TileMapServiceImageryProvider, defined, Math as CMath, Cartesian2, Cartesian3, Matrix4, Color, SceneMode, ReferenceFrame, PostProcessStage, EntityView, Entity, Clock, Camera, SceneTransforms } from "cesium"
 import { southEastZenithToAzEl } from "../engine/dynamics/gimbal.js"
 import InfoBox from "./InfoBox.js"
 import Toolbar from "./Toolbar.js"
@@ -23,9 +23,16 @@ import Observatory from "../engine/objects/Observatory.js"
  */
 function createViewer(container, universe, options) {
 
-  options = defaultValue(options, {})
+  options = options ?? {}
   if (!defined(options.infoBox))
     options.infoBox = false
+
+  if (!defined(options.geocoder))
+    options.geocoder = false
+
+  if (options.showLowResEarth) {
+    options.baseLayer = ImageryLayer.fromProviderAsync(TileMapServiceImageryProvider.fromUrl(buildModuleUrl("Assets/Textures/NaturalEarthII")));
+  }
 
   // Create Baseline Cesium Viewer
   const viewer = new Viewer(container, options)
@@ -45,14 +52,16 @@ function createViewer(container, universe, options) {
 function mixinViewer(viewer, universe, options) {
 
   // Default options
-  options = defaultValue(options, {})
-  options.showNightLayer = defaultValue(options.showNightLayer, true)
-  options.showWeatherLayer = defaultValue(options.showWeatherLayer, true)
-  options.weatherApiKey = defaultValue(options.weatherApiKey, 'YOUR_API_KEY')
-  options.infoBox2 = defaultValue(options.infoBox2, true)
-  options.infoBox2Container = defaultValue(viewer._element, undefined)
-  options.toolbar2 = defaultValue(options.toolbar2, true)
-  options.toolbar2Container = defaultValue(viewer._element, undefined)
+  options = options ?? {}
+  options.showNightLayer = options.showNightLayer ?? true
+  options.showWeatherLayer = options.showWeatherLayer ?? true
+  options.weatherApiKey = options.weatherApiKey ?? 'YOUR_API_KEY'
+  options.infoBox2 = options.infoBox2 ?? true
+  options.infoBox2Container = viewer._element ?? undefined
+  options.toolbar2 = options.toolbar2 ?? true
+  options.toolbar2Container = viewer._element ?? undefined
+  // Enable built-in search override for simulation object names
+  options.enableObjectSearch = options.enableObjectSearch ?? true
 
   // Viewer variables
   const scene = viewer.scene
