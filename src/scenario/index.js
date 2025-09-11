@@ -1,5 +1,5 @@
 /**
- * @ TODO prototype warning, will be refactored
+ * @TODO prototype warning, will be refactored
  * 
  * Scenario utilities for SatSimJS.
  *
@@ -13,7 +13,8 @@
  * browser UIs, notebooks, and apps embedding SatSimJS.
  */
 
-import { Color, Cartesian3, JulianDate } from 'cesium'
+import { Color, Cartesian3, JulianDate, Viewer } from 'cesium'
+import Universe from '../engine/Universe.js'
 
 /**
  * Create a ground EO observatory and attach a visualizer.
@@ -32,8 +33,10 @@ import { Color, Cartesian3, JulianDate } from 'cesium'
  * @param {Array} [obs.field_of_regard=[]] - Optional field of regard.
  */
 export function addObservatory(universe, viewer, obs) {
-  if (!obs || !obs.name) return
-  if (universe.hasObject && universe.hasObject(obs.name)) return
+  if (universe.hasObject && universe.hasObject(obs.name)) {
+    console.log(`Observatory with name ${obs.name} already exists, skipping creation.`)
+    return
+  }
 
   const o = universe.addGroundElectroOpticalObservatory(
     String(obs.name),
@@ -41,11 +44,11 @@ export function addObservatory(universe, viewer, obs) {
     Number(obs.longitude),
     Number(obs.altitude ?? 0),
     'AzElGimbal',
-    Number(obs.height ?? obs.sensor_height ?? 100),
-    Number(obs.width ?? obs.sensor_width ?? 100),
+    Number(obs.height),
+    Number(obs.width),
     Number(obs.y_fov ?? 5),
     Number(obs.x_fov ?? 5),
-    obs.field_of_regard || []
+    obs.field_of_regard ?? []
   )
 
   const desc = `<div><b>${obs.name}</b><br>` +
@@ -53,7 +56,7 @@ export function addObservatory(universe, viewer, obs) {
     `Longitude: ${obs.longitude} deg<br>` +
     `Altitude: ${obs.altitude ?? 0} m</div>`
 
-  try { viewer.addObservatoryVisualizer(o, desc) } catch (e) { /* no-op */ }
+  viewer.addObservatoryVisualizer(o, desc)
 }
 
 /**
@@ -76,32 +79,24 @@ export function addObservatory(universe, viewer, obs) {
  */
 export function addTwoBody(universe, viewer, entry, idx = 0) {
   const name = entry.name || `TwoBody-${idx + 1}`
-  if (universe.hasObject && universe.hasObject(name)) return
+  if (universe.hasObject && universe.hasObject(name)) {
+    console.log(`Satellite with name ${name} already exists, skipping creation.`)
+    return
+  }
 
-  const r = entry.position ?? entry.r_m ?? entry.r ?? entry.r_km ?? entry.position_km
-  const v = entry.velocity ?? entry.v_m_s ?? entry.v ?? entry.v_km_s ?? entry.velocity_km_s
+  const r = entry.position
+  const v = entry.velocity
   let r_m = r
   let v_m_s = v
 
-  const posUnits = (entry.position_units || entry.r_units || '').toLowerCase()
-  const velUnits = (entry.velocity_units || entry.v_units || '').toLowerCase()
-
-  if (Array.isArray(entry.r_km) || Array.isArray(entry.position_km) || posUnits.includes('km')) {
-    r_m = [r[0] * 1000, r[1] * 1000, r[2] * 1000]
-  }
-  if (Array.isArray(entry.v_km_s) || Array.isArray(entry.velocity_km_s) || velUnits.includes('km')) {
-    v_m_s = [v[0] * 1000, v[1] * 1000, v[2] * 1000]
-  }
-  if (!Array.isArray(r_m) || !Array.isArray(v_m_s)) return
-
   const R = new Cartesian3(Number(r_m[0]), Number(r_m[1]), Number(r_m[2]))
   const V = new Cartesian3(Number(v_m_s[0]), Number(v_m_s[1]), Number(v_m_s[2]))
-  const t = entry.epoch ? JulianDate.fromDate(new Date(entry.epoch)) : undefined
+  const t = JulianDate.fromDate(new Date(entry.epoch))
   const orientation = entry.orientation || 'nadir'
 
   const s = universe.addTwoBodySatellite(name, R, V, t || viewer.clock.currentTime.clone(), orientation, false, true)
 
-  const color = Color && Color.fromRandom ? new Color.fromRandom({ alpha: 1.0 }) : undefined
+  const color = Color.fromRandom({ alpha: 1.0 })
   const desc = `Two-body initial state @ ${entry.epoch || 'current'}<br>` +
     `r[m]=${JSON.stringify(r_m)}<br>v[m/s]=${JSON.stringify(v_m_s)}`
   const lead = (s && s.period) ? (s.period / 2) : 1800
@@ -126,10 +121,11 @@ export function addTwoBody(universe, viewer, entry, idx = 0) {
  */
 export function addSatelliteFromTLE(universe, viewer, name, tle1, tle2, orientation = 'nadir') {
   const s = universe.addSGP4Satellite(name, tle1, tle2, orientation || 'nadir', true)
-  const color = Color && Color.fromRandom ? new Color.fromRandom({ alpha: 1.0 }) : undefined
+  const color = Color.fromRandom({ alpha: 1.0 })
   const lead = (s && s.period) ? (s.period / 2) : 1800
   const trail = (s && s.period) ? (s.period / 2) : 1800
   const res = (s && s.period && s.eccentricity !== undefined) ? (s.period / (500 / (1 - s.eccentricity))) : 60
+  
   viewer.addObjectVisualizer(s, 'TLE', {
     path: { show: false, leadTime: lead, trailTime: trail, resolution: res, material: color, width: 1 },
     point: { show: true, pixelSize: 5, color: color, outlineColor: color }
@@ -179,7 +175,7 @@ export function parseTleCatalogText(text, limit = Infinity) {
  * Object fields:
  * - data|text: Inline TLE catalog text.
  * - url|path: URL to fetch TLE text from when no inline data is provided.
- * - limit: Maximum satellites to add (default 50).
+ * - limit: Maximum satellites to add (default 500000).
  * - orientation: Optional orientation strategy (e.g., 'nadir').
  *
  * @param {Universe} universe - The SatSim Universe instance.
@@ -187,7 +183,7 @@ export function parseTleCatalogText(text, limit = Infinity) {
  * @param {Object} obj - TLE catalog descriptor.
  */
 export async function addTleCatalog(universe, viewer, obj) {
-  const limit = Number(obj.limit ?? 50)
+  const limit = Number(obj.limit ?? 500000)
   let text = obj.data || obj.text || null
   if (!text) {
     const url = obj.url || obj.path
@@ -208,16 +204,12 @@ export async function addTleCatalog(universe, viewer, obj) {
  * @param {{start_time?: string, end_time?: string, time_step?: number}} params - Parameters.
  */
 export function applySimulationParameters(viewer, params) {
-  if (!params) return
-  const start = params.start_time ? JulianDate.fromDate(new Date(params.start_time)) : viewer.clock.startTime
+  const start = JulianDate.fromDate(new Date(params.start_time))
   const stop = params.end_time ? JulianDate.fromDate(new Date(params.end_time)) : JulianDate.addSeconds(start, 24 * 3600, new JulianDate())
   viewer.clock.startTime = start.clone()
   viewer.clock.currentTime = start.clone()
   viewer.clock.stopTime = stop.clone()
-  if (params.time_step) {
-    const step = Number(params.time_step)
-    if (!Number.isNaN(step)) viewer.clock.multiplier = step
-  }
+  viewer.clock.multiplier = Number(params.time_step)
 }
 
 /**
@@ -231,7 +223,10 @@ export function applySimulationParameters(viewer, params) {
  * @param {Object} obj - Scenario object entry.
  */
 export function addScenarioObject(universe, viewer, obj) {
-  if (!obj || !obj.type) return
+  if (!obj || !obj.type) {
+    console.log('Skipping scenario object with no type', obj)
+    return
+  }
   switch (String(obj.type || '').toLowerCase()) {
     case 'groundeoobservatory':
     case 'groundeo':
@@ -286,43 +281,29 @@ export function addScenarioObject(universe, viewer, obj) {
  * @param {Array<Object>} events - Array of events with `time` and `type`.
  */
 export function scheduleScenarioEvents(universe, viewer, events) {
-  if (!Array.isArray(events) || !events.length) return
-  const scheduled = events.map((ev) => {
+  if (!Array.isArray(events) || events.length === 0) return
+
+  // Convert scenario event times to absolute JulianDate and enqueue
+  events.forEach((ev) => {
     const t = ev.time
     let jd
     if (typeof t === 'number') {
+      // relative seconds from scenario start
       jd = JulianDate.addSeconds(viewer.clock.startTime, t, new JulianDate())
     } else if (typeof t === 'string') {
       jd = JulianDate.fromDate(new Date(t))
+    } else if (t && t.toString) {
+      try { jd = JulianDate.fromDate(new Date(String(t))) } catch (_) { /* ignore */ }
     }
-    return { type: ev.type, jd, observer: ev.observer, target: ev.target, fired: false }
-  }).filter(e => e.jd)
+    if (!jd) return
 
-  if (!scheduled.length) return
-  viewer.scene.preUpdate.addEventListener(function (_scene, time) {
-    scheduled.forEach(function (ev) {
-      if (ev.fired) return
-      if (JulianDate.lessThan(ev.jd, time) || JulianDate.equals(ev.jd, time)) {
-        try {
-          if (String(ev.type || '').toLowerCase() === 'trackobject') {
-            const site = universe.getObject && universe.getObject(ev.observer)
-            const target = universe.getObject && universe.getObject(ev.target)
-            let obs = null
-            if (site) {
-              const arr = universe._observatories || []
-              for (let i = 0; i < arr.length; i++) {
-                if (arr[i].site && arr[i].site.name === ev.observer) { obs = arr[i]; break }
-              }
-            }
-            if (obs && target) {
-              obs.gimbal.trackMode = 'rate'
-              obs.gimbal.trackObject = target
-            }
-          }
-        } catch (_) { /* no-op */ }
-        ev.fired = true
-      }
-    })
+    const type = String(ev.type || '').toLowerCase()
+    const data = { ...ev }
+    delete data.time
+    delete data.type
+
+    // Enqueue using the universe event queue (handlers registered in Universe)
+    universe.scheduleEvent({ time: jd, type, data })
   })
 }
 
@@ -332,18 +313,11 @@ export function scheduleScenarioEvents(universe, viewer, events) {
  * @param {Universe} universe - The SatSim Universe instance.
  * @param {Viewer} viewer - The SatSim viewer.
  * @param {Object} config - Parsed scenario JSON.
- * @returns {boolean} True if applied without parse errors.
  */
 export function loadScenario(universe, viewer, config) {
-  if (!config || typeof config !== 'object') return false
-  try {
-    if (config.simulationParameters) applySimulationParameters(viewer, config.simulationParameters)
-    if (Array.isArray(config.objects)) config.objects.forEach((o, i) => addScenarioObject(universe, viewer, { ...o, __index: i }))
-    if (Array.isArray(config.events)) scheduleScenarioEvents(universe, viewer, config.events)
-    return true
-  } catch (_) {
-    return false
-  }
+  if (config.simulationParameters) applySimulationParameters(viewer, config.simulationParameters)
+  if (Array.isArray(config.objects)) config.objects.forEach((o, i) => addScenarioObject(universe, viewer, { ...o, __index: i }))
+  if (Array.isArray(config.events)) scheduleScenarioEvents(universe, viewer, config.events)
 }
 
 /**
@@ -352,14 +326,8 @@ export function loadScenario(universe, viewer, config) {
  * @param {Universe} universe - The SatSim Universe instance.
  * @param {Viewer} viewer - The SatSim viewer.
  * @param {string} text - Scenario JSON as a string.
- * @returns {boolean} True if applied successfully.
  */
 export function loadScenarioFromText(universe, viewer, text) {
-  try {
-    const cfg = JSON.parse(text || '{}')
-    return loadScenario(universe, viewer, cfg)
-  } catch (_) {
-    return false
-  }
+  const cfg = JSON.parse(text || '{}')
+  loadScenario(universe, viewer, cfg)
 }
-
