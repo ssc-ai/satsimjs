@@ -1,4 +1,4 @@
-globalThis.SATSIM_VERSION = "0.11.0";
+globalThis.SATSIM_VERSION = "0.12.0";
 
 export { default as Universe } from './engine/Universe.js'
 
@@ -34,6 +34,9 @@ export { southEastZenithToAzEl, spaceBasedToAzEl } from './engine/dynamics/gimba
 export { getVisibility } from './engine/geometry/visibility.js'
 
 export { applyIau2006XysDataPatch } from './engine/cesium/Iau2006XysDataLocal.js'
+
+// @TODO warning scenario prototype, will be refactored
+export * as Scenario from './scenario/index.js'
 
 // Export commonly used Cesium classes for CDN usage
 export { 
