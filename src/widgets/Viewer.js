@@ -85,8 +85,11 @@ function mixinViewer(viewer, universe, options) {
   viewer.coverageVisualizer = new CoverageGridVisualizer(viewer, universe);
 
   viewer.labelsAlwaysOn = false;
-  viewer.labelDistanceThresholdMeters = 5000000; // Distance threshold (meters) for showing labels when global labels are enabled
+  // When global labels are ON in 3D, labels appear within this distance.
+  // We also fade alpha from 0 -> 1 between fadeStart (5e6) and fadeEnd (4e6) meters.
+  viewer.labelDistanceThresholdMeters = 5000000; // fadeStart (meters): label exists at/below this distance
   viewer.labelDistanceThresholdMetersSq = viewer.labelDistanceThresholdMeters * viewer.labelDistanceThresholdMeters;
+  viewer.labelFadeOpaqueMeters = 4000000; // fadeEnd (meters): label fully opaque at/below this distance
 
 
   viewer.BILLBOARD_SATELLITE = viewer.billboards.add({
@@ -612,12 +615,26 @@ function mixinViewer(viewer, universe, options) {
             obj.visualizer.label2.id = entity  // required for picking
             obj.visualizer.label2.update = function (time, universe) {
               obj.visualizer.label2.position = getObjectPositionInCesiumFrame(viewer, universe, obj, time)
-              if (viewer.labelsOn) {
+              // When global labels are ON in 3D, apply distance fade 5e6->4e6 m
+              if (viewer.labelsOn && viewer.cameraMode !== 'up') {
                 try {
                   const camPos = viewer.camera.positionWC;
                   const p = obj.visualizer.label2.position;
                   if (camPos && p) {
-                    obj.visualizer.label2.show = Cartesian3.distanceSquared(camPos, p) < viewer.labelDistanceThresholdMetersSq;
+                    const d2 = Cartesian3.distanceSquared(camPos, p);
+                    const inRange = d2 < viewer.labelDistanceThresholdMetersSq;
+                    obj.visualizer.label2.show = inRange;
+                    if (inRange) {
+                      const fadeStart = viewer.labelDistanceThresholdMeters;
+                      const fadeEnd = Math.max(0, viewer.labelFadeOpaqueMeters || 4000000);
+                      const fadeSpan = Math.max(1e-6, fadeStart - fadeEnd);
+                      const dist = Math.sqrt(d2);
+                      let alpha = 1.0;
+                      if (dist >= fadeStart) alpha = 0.0;
+                      else if (dist <= fadeEnd) alpha = 1.0;
+                      else alpha = (fadeStart - dist) / fadeSpan;
+                      try { obj.visualizer.label2.fillColor = Color.WHITE.withAlpha(alpha); } catch (e) { /* ignore */ }
+                    }
                   }
                 } catch (e) { /* ignore */ }
               }
@@ -692,6 +709,9 @@ function mixinViewer(viewer, universe, options) {
     const camPos = viewer.camera.positionWC;
     if (!camPos) return;
     const sats = universe._trackables || [];
+    const fadeStart = viewer.labelDistanceThresholdMeters; // 5e6
+    const fadeEnd = Math.max(0, viewer.labelFadeOpaqueMeters || 4000000); // 4e6 default
+    const fadeSpan = Math.max(1e-6, fadeStart - fadeEnd);
     for (let i = 0; i < sats.length; i++) {
       const obj = sats[i];
       const entity = obj && obj.visualizer;
@@ -700,10 +720,20 @@ function mixinViewer(viewer, universe, options) {
       // Compute (or reuse) position
       let pos;
       try { pos = getObjectPositionInCesiumFrame(viewer, universe, obj, viewer.clock.currentTime); } catch (e) { continue; }
-      const inRange = Cartesian3.distanceSquared(camPos, pos) < viewer.labelDistanceThresholdMetersSq;
+      const d2 = Cartesian3.distanceSquared(camPos, pos);
+      const inRange = d2 < viewer.labelDistanceThresholdMetersSq; // within fadeStart
       if (inRange) {
+        const dist = Math.sqrt(d2);
+        let alpha = 1.0;
+        if (dist >= fadeStart) {
+          alpha = 0.0;
+        } else if (dist <= fadeEnd) {
+          alpha = 1.0;
+        } else {
+          alpha = (fadeStart - dist) / fadeSpan; // 0..1
+        }
         if (!lbl) {
-          lbl = viewer.labels.add({ text: obj.name, font: '14px sans-serif', show: true });
+          lbl = viewer.labels.add({ text: obj.name, font: '14px sans-serif', show: true, fillColor: Color.WHITE.withAlpha(alpha) });
           lbl.id = entity;
           lbl.position = pos;
           lbl.update = function (time, uni) {
@@ -715,6 +745,7 @@ function mixinViewer(viewer, universe, options) {
           if (Array.isArray(obj.updateListeners)) obj.updateListeners.push(lbl);
         } else {
           lbl.position = pos;
+          try { lbl.fillColor = Color.WHITE.withAlpha(alpha); } catch (e) { /* ignore */ }
           lbl.show = true;
         }
       } else if (lbl) {
