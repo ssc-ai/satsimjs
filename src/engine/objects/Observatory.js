@@ -23,7 +23,7 @@ class Observatory {
 
     /**
      * Gets the site object.
-     * @returns {Site} The site object.
+     * @returns {SimObject} The site object.
      */
     get site() {
         return this._site;
@@ -31,7 +31,7 @@ class Observatory {
 
     /**
      * Sets the site object.
-     * @param {Site} value - The site object.
+     * @param {SimObject} value - The site object.
      */
     set site(value) {
         this._site = value;
@@ -55,7 +55,7 @@ class Observatory {
 
     /**
      * Gets the sensor object.
-     * @returns {Sensor} The sensor object.
+     * @returns {SimObject} The sensor object.
      */
     get sensor() {
         return this._sensor;
@@ -63,7 +63,7 @@ class Observatory {
 
     /**
      * Sets the sensor object.
-     * @param {Sensor} value - The sensor object.
+     * @param {ElectroOpicalSensor} value - The sensor object.
      */
     set sensor(value) {
         this._sensor = value;
