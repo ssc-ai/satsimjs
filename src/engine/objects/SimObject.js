@@ -1,4 +1,4 @@
-import { ReferenceFrame, Cartesian3, JulianDate, Matrix4, defined, defaultValue, Entity } from "cesium";
+import { ReferenceFrame, Cartesian3, JulianDate, Matrix4, defined, Entity } from "cesium";
 import TransformGroup from "../graph/TransformGroup.js";
 
 /**
@@ -80,7 +80,7 @@ class SimObject extends TransformGroup {
    * @readonly
    */
   get referenceFrame() {
-    return defaultValue(this._referenceFrame, defined(this.parent) ? this.parent.referenceFrame : undefined);
+    return this._referenceFrame ?? (defined(this.parent) ? this.parent.referenceFrame : undefined);
   }
 
   /**

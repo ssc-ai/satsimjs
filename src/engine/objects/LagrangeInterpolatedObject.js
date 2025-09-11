@@ -1,4 +1,4 @@
-import { JulianDate, defaultValue} from 'cesium'
+import { JulianDate } from 'cesium'
 import { lagrange } from '../dynamics/lagrange.js'
 import SimObject from './SimObject.js'
 import Universe from '../Universe.js'
@@ -17,7 +17,7 @@ class LagrangeInterpolatedObject extends SimObject {
     this._object = object
     this._times = []
     this._positions = []
-    this._interval = defaultValue(this.period / 60.0,  100)
+    this._interval = (this.period / 60.0) ?? 100
     this._epoch = new JulianDate()
   }
 

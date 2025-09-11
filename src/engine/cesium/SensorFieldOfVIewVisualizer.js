@@ -1,10 +1,10 @@
-import { defaultValue, Color, CallbackProperty, Cartesian3, Math as CMath } from 'cesium'
+import { Color, CallbackProperty, Cartesian3, Math as CMath } from 'cesium'
 import { createObjectPositionProperty, createObjectOrientationProperty } from './utils.js'
 import CompountElementVisualizer from './CompoundElementVisualizer.js'
 
 class SensorFieldOfViewVisualizer extends CompountElementVisualizer {
   constructor(viewer, site, gimbal, sensor, universe, color) {
-    super(defaultValue(color, Color.GREEN), 0.25, 0.5)
+    super(color ?? Color.GREEN, 0.25, 0.5)
     const e = viewer.entities.add({
       name: sensor.name + ' Field of View',
       position: createObjectPositionProperty(sensor, universe, viewer),

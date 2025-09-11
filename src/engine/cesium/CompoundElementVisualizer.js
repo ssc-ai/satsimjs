@@ -1,13 +1,13 @@
-import { defaultValue, Color } from "cesium"
+import { Color } from "cesium"
 
 class CompountElementVisualizer {
   constructor(color, materialAlpha, outlineAlpha) {
     this._entities = []
     this._show = true
     this._outline = true
-    this._color = defaultValue(color, Color.WHITE)
-    this._materialAlpha = defaultValue(materialAlpha, 0.25)
-    this._outlineAlpha = defaultValue(outlineAlpha, 0.5)
+    this._color = color ?? Color.WHITE
+    this._materialAlpha = materialAlpha ?? 0.25
+    this._outlineAlpha = outlineAlpha ?? 0.5
   }
 
   get show() {

@@ -1,4 +1,4 @@
-import { Color, defaultValue, SampledPositionProperty, JulianDate, Cartesian3, LagrangePolynomialApproximation, defined, ReferenceFrame, Matrix3, Quaternion, CallbackProperty } from 'cesium'
+import { Color, SampledPositionProperty, JulianDate, Cartesian3, LagrangePolynomialApproximation, defined, ReferenceFrame, Matrix3, Quaternion, CallbackProperty } from 'cesium'
 import { CallbackPositionProperty, ElectroOpicalSensor } from '../../index.js'
 import { southEastZenithToAzEl } from '../dynamics/gimbal.js'
 
@@ -97,7 +97,7 @@ function colorVisibleSatellites(universe, observatories, time, objects=undefined
   }
 
   const [R, O, Y, G] = [Color.RED.withAlpha(alpha), Color.ORANGE.withAlpha(alpha), Color.YELLOW.withAlpha(alpha), Color.GREEN.withAlpha(alpha)]
-  const trackables = defaultValue(objects, universe._trackables)
+  const trackables = objects ?? universe._trackables
   trackables.forEach((o) => {
     const point = getPoint(o)
     if(showNonVisible) {

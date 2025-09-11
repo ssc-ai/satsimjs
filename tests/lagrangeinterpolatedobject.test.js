@@ -1,5 +1,5 @@
 import LagrangeInterpolatedObject from '../src/engine/objects/LagrangeInterpolatedObject.js';
-import { JulianDate, ReferenceFrame, Cartesian3, defaultValue } from 'cesium';
+import { JulianDate, ReferenceFrame, Cartesian3 } from 'cesium';
 
 // Mock the lagrange dynamics module
 jest.mock('../src/engine/dynamics/lagrange.js', () => ({
@@ -79,8 +79,8 @@ describe('LagrangeInterpolatedObject', () => {
       lagrangeObject = new LagrangeInterpolatedObject(objectWithoutPeriod);
       
       // When period is undefined, this.period returns undefined, 
-      // undefined / 60.0 = NaN, and defaultValue(NaN, 100) should return 100
-      // But Cesium's defaultValue may handle NaN differently, so let's check actual behavior
+      // undefined / 60.0 = NaN, and default value(NaN, 100) should return 100
+      // But Cesium's default value may handle NaN differently, so let's check actual behavior
       expect(typeof lagrangeObject._interval).toBe('number');
       // If it's NaN, it would fail other tests, so the code might be working as intended
     });

@@ -1,4 +1,4 @@
-import { defined, DeveloperError, Event, PositionProperty, ReferenceFrame, defaultValue } from "cesium";
+import { defined, DeveloperError, Event, PositionProperty, ReferenceFrame } from "cesium";
 
 /**
  * A {@link Property} whose value is lazily evaluated by a callback function.
@@ -14,7 +14,7 @@ function CallbackPositionProperty(callback, isConstant, referenceFrame) {
   this._callback = undefined;
   this._isConstant = undefined;
   this._definitionChanged = new Event();
-  this._referenceFrame = defaultValue(referenceFrame, () => ReferenceFrame.FIXED);
+  this._referenceFrame = referenceFrame ?? (() => ReferenceFrame.FIXED);
   this.setCallback(callback, isConstant);
 }
 

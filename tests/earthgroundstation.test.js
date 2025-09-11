@@ -1,5 +1,5 @@
 import EarthGroundStation from '../src/engine/objects/EarthGroundStation.js';
-import { ReferenceFrame, JulianDate, Cartesian3, Math as CMath, defaultValue } from 'cesium';
+import { ReferenceFrame, JulianDate, Cartesian3, Math as CMath } from 'cesium';
 
 describe('EarthGroundStation', () => {
   let groundStation;
@@ -561,12 +561,12 @@ describe('EarthGroundStation', () => {
   });
 
   describe('error handling and edge cases', () => {
-    test('should handle undefined altitude with defaultValue', () => {
+    test('should handle undefined altitude with default value', () => {
       groundStation = new EarthGroundStation(testLatitude, testLongitude, undefined, testName);
       expect(groundStation._altitude).toBe(0.0);
     });
 
-    test('should handle null altitude with defaultValue', () => {
+    test('should handle null altitude with default value', () => {
       groundStation = new EarthGroundStation(testLatitude, testLongitude, null, testName);
       expect(groundStation._altitude).toBe(0.0);
     });

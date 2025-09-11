@@ -1,4 +1,4 @@
-import { Math as CMath, Cartesian3, ReferenceFrame, defaultValue } from 'cesium'
+import { Math as CMath, Cartesian3, ReferenceFrame } from 'cesium'
 import SimObject from './SimObject.js'
 
 /**
@@ -17,7 +17,7 @@ class EarthGroundStation extends SimObject {
     super(name, ReferenceFrame.FIXED)
     this._latitude = latitude
     this._longitude = longitude
-    this._altitude = defaultValue(altitude, 0.0) // meters
+    this._altitude = altitude ?? 0.0 // meters
     this._period = 86400
 
     this._initialize()
