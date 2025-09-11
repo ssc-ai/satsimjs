@@ -10,6 +10,7 @@ import SimObject from "./objects/SimObject.js";
 import Observatory from "./objects/Observatory.js";
 import { Cartesian3, JulianDate, defined } from "cesium";
 import Gimbal from "./objects/Gimbal.js";
+import EventQueue from "./event/EventQueue.js";
 
 /**
  * Represents a universe containing ECI objects, ground stations, sensors, and gimbals.
@@ -64,6 +65,32 @@ class Universe {
      * @private
      */
     this._observatories = []
+
+    /**
+     * Event queue for time-based actions.
+     * @type {EventQueue}
+     * @private
+     */
+    this._events = new EventQueue()
+
+    // Register default event handlers
+    // - trackObject: { observer: siteName, target: objectName }
+    this._events.registerHandler('trackObject', (universe, ev) => {
+      const observerName = ev?.data?.observer || ev?.observer
+      const targetName = ev?.data?.target || ev?.target
+      if (!observerName || !targetName) return
+      const target = universe.getObject && universe.getObject(targetName)
+      if (!target) return
+      const arr = universe._observatories || []
+      for (let i = 0; i < arr.length; i++) {
+        const o = arr[i]
+        if (o?.site?.name === observerName && o?.gimbal) {
+          o.gimbal.trackMode = 'rate'
+          o.gimbal.trackObject = target
+          break
+        }
+      }
+    })
   }
 
   /**
@@ -190,7 +217,7 @@ class Universe {
    * @param {number} width - The width of the sensor in pixels.
    * @param {number} y_fov - The vertical field of view of the sensor in degrees.
    * @param {number} x_fov - The horizontal field of view of the sensor in degrees.
-   * @param {number} field_of_regard - The field of regard of the sensor.
+   * @param {Array<number>} field_of_regard - The field of regard of the sensor.
    * @returns {{site: EarthGroundStation, gimbal: AzElGimbal, sensor: ElectroOpicalSensor}} - The added observatory.
    */
   addGroundElectroOpticalObservatory(name, latitude, longitude, altitude, gimbalType, height, width, y_fov, x_fov, field_of_regard) {
@@ -265,10 +292,29 @@ class Universe {
   }
 
   /**
+   * Access the universe event queue.
+   * @type {EventQueue}
+   */
+  get events() {
+    return this._events
+  }
+
+  /**
+   * Convenience method to schedule an event.
+   * @param {{ time: JulianDate|string|Date, type?: string, data?: any, handler?: Function }} evt
+   * @returns {string} Event id
+   */
+  scheduleEvent(evt) {
+    return this._events.add(evt)
+  }
+
+  /**
    * Updates the universe to the given time.
    * @param {JulianDate} time - The time to update the universe to.
    */
   update(time, forceUpdate = false) {
+    // Process due events before state updates
+    this._events.process(time, this)
     // TODO replace this with graph traversal
     this._earth.update(time, this, forceUpdate)
     this._sun.update(time, this, forceUpdate)
