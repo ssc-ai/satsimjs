@@ -13,7 +13,7 @@
  * browser UIs, notebooks, and apps embedding SatSimJS.
  */
 
-import { Color, Cartesian3, JulianDate, Viewer } from 'cesium'
+import { Color, Cartesian3, JulianDate, Viewer, defined } from 'cesium'
 import Universe from '../engine/Universe.js'
 
 /**
@@ -201,15 +201,67 @@ export async function addTleCatalog(universe, viewer, obj) {
  * Apply simulation parameters to the viewer clock.
  *
  * @param {Viewer} viewer - The SatSim viewer.
- * @param {{start_time?: string, end_time?: string, time_step?: number}} params - Parameters.
+ * @param {{start_time?: string, end_time?: string, time_step?: number, clock_step?: string, clock_range?: string, current_time?: string, playback_state?: string}} params - Parameters.
  */
 export function applySimulationParameters(viewer, params) {
-  const start = JulianDate.fromDate(new Date(params.start_time))
-  const stop = params.end_time ? JulianDate.fromDate(new Date(params.end_time)) : JulianDate.addSeconds(start, 24 * 3600, new JulianDate())
-  viewer.clock.startTime = start.clone()
-  viewer.clock.currentTime = start.clone()
-  viewer.clock.stopTime = stop.clone()
-  viewer.clock.multiplier = Number(params.time_step)
+  if (defined(params.start_time)) {
+    const start = JulianDate.fromDate(new Date(params.start_time))
+    const stop = params.end_time ? JulianDate.fromDate(new Date(params.end_time)) : JulianDate.addSeconds(start, 24 * 3600, new JulianDate())
+    const current = params.current_time ? JulianDate.fromDate(new Date(params.current_time)) : start.clone()
+    viewer.clock.startTime = start.clone()
+    viewer.clock.currentTime = current.clone()
+    viewer.clock.stopTime = stop.clone()
+  }
+  if (defined(params.time_step)) viewer.clock.multiplier = Number(params.time_step)
+  if (defined(params.clock_step)) {
+    const clockStepValue = String(params.clock_step).toLowerCase()
+    switch (clockStepValue) {
+      case 'tick_dependent':
+        viewer.clock.clockStep = 0
+        break
+      case 'system_clock_multiplier':
+        viewer.clock.clockStep = 1
+        break
+      case 'system_clock':
+        viewer.clock.clockStep = 2
+        break
+      default:
+        viewer.clock.clockStep = Number(params.clock_step)
+        break
+    }
+  }
+  if (defined(params.clock_range)) {
+    const clockRangeValue = String(params.clock_range).toLowerCase()
+    switch (clockRangeValue) {
+      case 'unbounded':
+        viewer.clock.clockRange = 0
+        break
+      case 'clamped':
+        viewer.clock.clockRange = 1
+        break
+      case 'loop_stop':
+        viewer.clock.clockRange = 2
+        break
+      default:
+        viewer.clock.clockRange = Number(params.clock_range)
+        break
+    }
+  }
+  if (defined(params.playback_state)) {
+    const state = String(params.playback_state).toLowerCase()
+    switch (state) {
+      case 'play':
+        viewer.clock.shouldAnimate = true
+        break
+      case 'pause':
+      case 'stop':
+        viewer.clock.shouldAnimate = false
+        break
+      default:
+        viewer.clock.shouldAnimate = Boolean(params.playback_state)
+        break
+    }
+  }
 }
 
 /**
