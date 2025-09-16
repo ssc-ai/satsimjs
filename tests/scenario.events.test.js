@@ -59,6 +59,21 @@ describe('Scenario event scheduling', () => {
     expect(gimbal.trackObject).toBe(sat)
   })
 
+  test('trackObject event clears gimbal tracking when target is null', () => {
+    const existingTarget = { name: 'OLD', update: jest.fn() }
+    const gimbal = { trackMode: 'rate', trackObject: existingTarget, update: jest.fn() }
+    const site = { name: 'OBS', update: jest.fn() }
+    const sensor = { update: jest.fn() }
+    universe._observatories.push({ site, gimbal, sensor })
+
+    scheduleScenarioEvents(universe, viewer, [
+      { time: 0, type: 'trackObject', observer: 'OBS', target: null }
+    ])
+
+    universe.update(start)
+    expect(gimbal.trackObject).toBeNull()
+  })
+
   test('loadScenario adds events without clearing existing ones', () => {
     // Add a pre-existing event
     universe.scheduleEvent({ time: JulianDate.addSeconds(start, 100, new JulianDate()), type: 'foo', data: {} })

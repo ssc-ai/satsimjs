@@ -76,17 +76,23 @@ class Universe {
     // Register default event handlers
     // - trackObject: { observer: siteName, target: objectName }
     this._events.registerHandler('trackObject', (universe, ev) => {
-      const observerName = ev?.data?.observer || ev?.observer
-      const targetName = ev?.data?.target || ev?.target
-      if (!observerName || !targetName) return
-      const target = universe.getObject && universe.getObject(targetName)
-      if (!target) return
+      const observerName = ev?.data?.observer ?? ev?.observer
+      const dataHasTarget = ev?.data && Object.prototype.hasOwnProperty.call(ev.data, 'target')
+      const eventHasTarget = Object.prototype.hasOwnProperty.call(ev ?? {}, 'target')
+      const targetProvided = dataHasTarget || eventHasTarget
+      const targetName = ev?.data?.target ?? ev?.target
+      if (!observerName) return
+      const target = (targetName !== null && targetName !== undefined) ? (universe.getObject && universe.getObject(targetName)) : undefined
       const arr = universe._observatories || []
       for (let i = 0; i < arr.length; i++) {
         const o = arr[i]
         if (o?.site?.name === observerName && o?.gimbal) {
-          o.gimbal.trackMode = 'rate'
-          o.gimbal.trackObject = target
+          if (targetProvided && (targetName === null || targetName === undefined)) {
+            o.gimbal.trackObject = null
+          } else if (target) {
+            o.gimbal.trackMode = 'rate'
+            o.gimbal.trackObject = target
+          }
           break
         }
       }
