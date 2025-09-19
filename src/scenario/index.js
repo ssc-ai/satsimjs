@@ -16,6 +16,34 @@
 import { Color, Cartesian3, JulianDate, Viewer, defined } from 'cesium'
 import Universe from '../engine/Universe.js'
 
+function resolveScenarioColor(input) {
+  if (Array.isArray(input) && input.length === 3) {
+    const components = input.map((value) => Number(value))
+    if (components.every((value) => Number.isFinite(value))) {
+      const useByteScale = components.some((value) => Math.abs(value) > 1)
+      const rgbBytes = components
+        .map((value) => (useByteScale ? value : value * 255))
+        .map((value) => Math.max(0, Math.min(255, Math.round(value))))
+      return Color.fromBytes(rgbBytes[0], rgbBytes[1], rgbBytes[2], 255)
+    }
+  }
+
+  if (typeof input === 'string') {
+    const trimmed = input.trim()
+    if (!trimmed || trimmed.toLowerCase() === 'random') {
+      return Color.fromRandom({ alpha: 1.0 })
+    }
+
+    const cssColor = Color.fromCssColorString(trimmed)
+    if (cssColor) {
+      cssColor.alpha = 1.0
+      return cssColor
+    }
+  }
+
+  return Color.fromRandom({ alpha: 1.0 })
+}
+
 /**
  * Create a ground EO observatory and attach a visualizer.
  *
@@ -76,6 +104,7 @@ export function addObservatory(universe, viewer, obs) {
  * @param {Array<number>} [entry.v_km_s] - Velocity in km/s.
  * @param {string|Date} [entry.epoch] - Epoch as ISO string or Date.
  * @param {string} [entry.orientation='nadir'] - Orientation strategy.
+ * @param {string|Array<number>} [entry.color='random'] - Visualization color for the satellite.
  */
 export function addTwoBody(universe, viewer, entry, idx = 0) {
   const name = entry.name || `TwoBody-${idx + 1}`
@@ -96,7 +125,7 @@ export function addTwoBody(universe, viewer, entry, idx = 0) {
 
   const s = universe.addTwoBodySatellite(name, R, V, t || viewer.clock.currentTime.clone(), orientation, false, true)
 
-  const color = Color.fromRandom({ alpha: 1.0 })
+  const color = resolveScenarioColor(entry.color)
   const desc = `Two-body initial state @ ${entry.epoch || 'current'}<br>` +
     `r[m]=${JSON.stringify(r_m)}<br>v[m/s]=${JSON.stringify(v_m_s)}`
   const lead = (s && s.period) ? (s.period / 2) : 1800
@@ -105,7 +134,7 @@ export function addTwoBody(universe, viewer, entry, idx = 0) {
 
   viewer.addObjectVisualizer(s, desc, {
     path: { show: false, leadTime: lead, trailTime: trail, resolution: res, material: color, width: 1 },
-    point: { show: true, pixelSize: 5, color: color, outlineColor: color }
+    point: { show: true, pixelSize: 2, color: color, outlineColor: color }
   })
 }
 
@@ -118,17 +147,18 @@ export function addTwoBody(universe, viewer, entry, idx = 0) {
  * @param {string} tle1 - Line 1.
  * @param {string} tle2 - Line 2.
  * @param {string} [orientation='nadir'] - Orientation strategy.
+ * @param {string|Array<number>} [color='random'] - Visualization color for the satellite.
  */
-export function addSatelliteFromTLE(universe, viewer, name, tle1, tle2, orientation = 'nadir') {
+export function addSatelliteFromTLE(universe, viewer, name, tle1, tle2, orientation = 'nadir', colorInput) {
   const s = universe.addSGP4Satellite(name, tle1, tle2, orientation || 'nadir', true)
-  const color = Color.fromRandom({ alpha: 1.0 })
+  const color = resolveScenarioColor(colorInput)
   const lead = (s && s.period) ? (s.period / 2) : 1800
   const trail = (s && s.period) ? (s.period / 2) : 1800
   const res = (s && s.period && s.eccentricity !== undefined) ? (s.period / (500 / (1 - s.eccentricity))) : 60
   
   viewer.addObjectVisualizer(s, 'TLE', {
     path: { show: false, leadTime: lead, trailTime: trail, resolution: res, material: color, width: 1 },
-    point: { show: true, pixelSize: 5, color: color, outlineColor: color }
+    point: { show: true, pixelSize: 2, color: color, outlineColor: color }
   })
 }
 
@@ -193,7 +223,7 @@ export async function addTleCatalog(universe, viewer, obj) {
   }
   const list = parseTleCatalogText(text, limit)
   list.slice(0, limit).forEach((sat) => {
-    addSatelliteFromTLE(universe, viewer, sat.name, sat.l1, sat.l2, obj.orientation)
+    addSatelliteFromTLE(universe, viewer, sat.name, sat.l1, sat.l2, obj.orientation, obj.color)
   })
 }
 
@@ -298,7 +328,7 @@ export function addScenarioObject(universe, viewer, obj) {
     }
     case 'sgp4satellite':
     case 'sgp4': {
-      addSatelliteFromTLE(universe, viewer, obj.name || String(obj.tle1 || '').trim(), obj.tle1, obj.tle2, obj.orientation)
+      addSatelliteFromTLE(universe, viewer, obj.name || String(obj.tle1 || '').trim(), obj.tle1, obj.tle2, obj.orientation, obj.color)
       break
     }
     case 'tlecatalog':
@@ -315,6 +345,7 @@ export function addScenarioObject(universe, viewer, obj) {
         velocity: (obj.velocity != null ? obj.velocity : obj.initial_velocity),
         epoch: obj.epoch,
         orientation: obj.orientation,
+        color: obj.color,
       })
       break
     }
