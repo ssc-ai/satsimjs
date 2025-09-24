@@ -11,6 +11,7 @@ import CoverageGridVisualizer from "../engine/cesium/CoverageGridVisualizer.js"
 import SimObject from "../engine/objects/SimObject.js"
 import { CompoundElementVisualizer } from "../index.js"
 import Observatory from "../engine/objects/Observatory.js"
+import { getShadowStatus, ShadowState } from "../engine/geometry/shadow.js"
 
 
 /**
@@ -90,6 +91,143 @@ function mixinViewer(viewer, universe, options) {
   viewer.labelDistanceThresholdMeters = 5000000; // fadeStart (meters): label exists at/below this distance
   viewer.labelDistanceThresholdMetersSq = viewer.labelDistanceThresholdMeters * viewer.labelDistanceThresholdMeters;
   viewer.labelFadeOpaqueMeters = 4000000; // fadeEnd (meters): label fully opaque at/below this distance
+
+
+  // Shadow-coloring state (per point primitive) and helper utilities.
+  // viewer._shadowStateCache keeps the last known ShadowState per object for change detection/logging.
+  viewer.shadowColoringEnabled = false;
+  viewer._shadowStateCache = new Map();
+  const SHADOWED_STATES = new Set([ShadowState.UMBRA, ShadowState.PENUMBRA]);
+
+  /**
+   * Replace a point primitive's color/outline with black while stashing original values.
+   * @param {import('cesium').PointPrimitive & {_shadowOverrideActive?: boolean}} point
+   */
+  function activatePointShadow(point) {
+    if (!point || point._shadowOverrideActive) {
+      return;
+    }
+    if (!point._shadowOriginalColor) {
+      const base = point.color;
+      point._shadowOriginalColor = base ? Color.clone(base, new Color()) : Color.clone(Color.WHITE, new Color());
+    }
+    if (point.outlineColor && !point._shadowOriginalOutlineColor) {
+      point._shadowOriginalOutlineColor = Color.clone(point.outlineColor, new Color());
+    }
+    point.color = Color.clone(Color.BLACK, new Color());
+    if (point.outlineColor) {
+      point.outlineColor = Color.clone(Color.BLACK, new Color());
+    }
+    point._shadowOverrideActive = true;
+  }
+
+  /**
+   * Restore a point primitive's previously cached color/outline.
+   * @param {import('cesium').PointPrimitive & {_shadowOverrideActive?: boolean}} point
+   */
+  function deactivatePointShadow(point) {
+    if (!point || !point._shadowOverrideActive) {
+      return;
+    }
+    if (point._shadowOriginalColor) {
+      point.color = Color.clone(point._shadowOriginalColor, new Color());
+    }
+    if (point._shadowOriginalOutlineColor) {
+      point.outlineColor = Color.clone(point._shadowOriginalOutlineColor, new Color());
+    }
+    point._shadowOverrideActive = false;
+  }
+
+  /**
+   * Remove any persisted shadow metadata from a point primitive.
+   * @param {import('cesium').PointPrimitive & {_shadowOverrideActive?: boolean}} point
+   */
+  function clearPointShadowMetadata(point) {
+    if (!point) {
+      return;
+    }
+    if (point._shadowOverrideActive) {
+      deactivatePointShadow(point);
+    } else {
+      if (point._shadowOriginalColor) {
+        point.color = Color.clone(point._shadowOriginalColor, new Color());
+      }
+      if (point._shadowOriginalOutlineColor) {
+        point.outlineColor = Color.clone(point._shadowOriginalOutlineColor, new Color());
+      }
+    }
+    point._shadowOverrideActive = false;
+    point._shadowOriginalColor = undefined;
+    point._shadowOriginalOutlineColor = undefined;
+  }
+
+  /**
+   * Apply a single object's computed shadow status to its visualizer primitive.
+   * @param {import('../engine/objects/SimObject.js').default|undefined} object
+   * @param {ShadowState} status
+   */
+  function applyShadowStatusToObject(object, status) {
+    if (!object || !defined(object.visualizer)) {
+      return;
+    }
+    const entity = object.visualizer;
+    const pointPrimitive = entity.point2;
+    if (!pointPrimitive) {
+      const previous = viewer._shadowStateCache.get(object);
+      if (previous !== status) {
+        console.debug('[Shadow] No point primitive for object', object?.name, 'status', status);
+        viewer._shadowStateCache.set(object, status);
+      }
+      return;
+    }
+    const isShadowed = SHADOWED_STATES.has(status);
+    const previous = viewer._shadowStateCache.get(object);
+    if (previous !== status) {
+      console.debug('[Shadow] status change', object?.name, previous, '->', status, 'shadowed?', isShadowed);
+      viewer._shadowStateCache.set(object, status);
+    }
+    if (isShadowed) {
+      activatePointShadow(pointPrimitive);
+    } else if (pointPrimitive._shadowOverrideActive) {
+      deactivatePointShadow(pointPrimitive);
+    }
+  }
+
+  /**
+   * Reset shadow overrides on every known trackable object and clear cache entries.
+   */
+  function clearAllShadowOverrides() {
+    const trackables = universe._trackables || [];
+    for (let i = 0; i < trackables.length; i++) {
+      const obj = trackables[i];
+      viewer._shadowStateCache.delete(obj);
+      if (!obj || !defined(obj.visualizer) || !obj.visualizer.point2) {
+        continue;
+      }
+      clearPointShadowMetadata(obj.visualizer.point2);
+    }
+  }
+
+  /**
+   * Update the shadow coloring for all trackables at the supplied epoch.
+   * @param {import('cesium').JulianDate} time
+   */
+  function updateShadowColoring(time) {
+    const trackables = universe._trackables || [];
+    if (!trackables.length) {
+      return;
+    }
+    let statuses;
+    try {
+      statuses = getShadowStatus(universe.sun, trackables, time, universe);
+    } catch (err) {
+      console.warn('Failed to classify object shadows', err);
+      return;
+    }
+    for (let i = 0; i < trackables.length; i++) {
+      applyShadowStatusToObject(trackables[i], statuses[i]);
+    }
+  }
 
 
   viewer.BILLBOARD_SATELLITE = viewer.billboards.add({
@@ -677,6 +815,27 @@ function mixinViewer(viewer, universe, options) {
   };
 
   /**
+   * Toggle the real-time shadow-coloring overlay on/off.
+   * @param {boolean} enabled
+   */
+  viewer.enableShadowColoring = function (enabled) {
+    const shouldEnable = !!enabled;
+    if (viewer.shadowColoringEnabled === shouldEnable) {
+      return;
+    }
+    if (viewer.shadowToggleButton && viewer.shadowToggleButton.checked !== shouldEnable) {
+      viewer.shadowToggleButton.checked = shouldEnable;
+    }
+    viewer.shadowColoringEnabled = shouldEnable;
+    console.debug('[Shadow] shadow coloring toggled', shouldEnable);
+    if (shouldEnable) {
+      updateShadowColoring(viewer.clock.currentTime);
+    } else {
+      clearAllShadowOverrides();
+    }
+  };
+
+  /**
    * Enable/disable all labels globally by toggling each trackable's label2.
    * If a label doesn't exist yet, create it and hook up position updates.
    * @param {boolean} enabled
@@ -761,6 +920,15 @@ function mixinViewer(viewer, universe, options) {
   };
   viewer._eventHelper.add(viewer.clock.onTick, dynamicLabelTick, viewer);
 
+  const shadowTick = function (clock) {
+    if (!viewer.shadowColoringEnabled) {
+      return;
+    }
+    const currentTime = (clock && clock.currentTime) ? clock.currentTime : viewer.clock.currentTime;
+    updateShadowColoring(currentTime);
+  };
+  viewer._eventHelper.add(viewer.clock.onTick, shadowTick, viewer);
+
 
 
 
@@ -837,6 +1005,9 @@ function mixinViewer(viewer, universe, options) {
   });
   const labelsButton = toolbar.addToggleButton('Labels', false, (checked) => {
     viewer.setAllLabelsEnabled(checked);
+  });
+  viewer.shadowToggleButton = toolbar.addToggleButton('Shadow', false, (checked) => {
+    viewer.enableShadowColoring(checked);
   });
   // (2D-only Up toggle removed; What's Up is always 2D-only)
   toolbar.addSeparator();
