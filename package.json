@@ -1,6 +1,6 @@
 {
   "name": "satsim",
-  "version": "0.13.3",
+  "version": "0.14.0",
   "description": "SatSim for JavaScript.",
   "homepage": "https://github.com/ssc-ai/satsimjs/",
   "license": "MIT",
