@@ -244,6 +244,7 @@ class Universe {
     this._sensors.push(sensor)
 
     const observatory = new Observatory(site, gimbal, sensor)
+    observatory.name = name
     this._observatories.push(observatory)
 
 
