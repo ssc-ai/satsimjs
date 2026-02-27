@@ -6,6 +6,7 @@ import AzElGimbal from "./objects/AzElGimbal.js";
 import ElectroOpicalSensor from "./objects/ElectroOpticalSensor.js";
 import LagrangeInterpolatedObject from "./objects/LagrangeInterpolatedObject.js";
 import TwoBodySatellite from "./objects/TwoBodySatellite.js";
+import AirVehicle from "./objects/AirVehicle.js";
 import SimObject from "./objects/SimObject.js";
 import Observatory from "./objects/Observatory.js";
 import { Cartesian3, JulianDate, defined } from "cesium";
@@ -211,6 +212,28 @@ class Universe {
       satellite = this.addObject(satellite, trackable);
     return satellite;
     }
+
+  /**
+   * Adds an air vehicle (e.g., UAV/drone) to the universe.
+   * Velocity and acceleration are provided in local NED coordinates:
+   * x=north, y=east, z=down.
+   *
+   * @param {string} name - The name of the air vehicle.
+   * @param {number} latitude - Initial latitude in degrees.
+   * @param {number} longitude - Initial longitude in degrees.
+   * @param {number} [altitude=0] - Initial altitude in meters.
+   * @param {Cartesian3} [velocityNed] - Initial velocity in local NED (m/s).
+   * @param {Cartesian3} [accelerationNed] - Constant acceleration in local NED (m/s^2).
+   * @param {number} [heading] - Heading in degrees clockwise from north.
+   * @param {JulianDate} [t0=JulianDate.now()] - Initial epoch.
+   * @param {boolean} [trackable=true] - Whether the vehicle is trackable.
+   * @returns {AirVehicle} The added air vehicle.
+   */
+  addAirVehicle(name, latitude, longitude, altitude = 0, velocityNed = new Cartesian3(), accelerationNed = new Cartesian3(), heading = undefined, t0 = JulianDate.now(), trackable = true) {
+    const vehicle = new AirVehicle(latitude, longitude, altitude, velocityNed, accelerationNed, heading, t0, name)
+    vehicle.attach(this.earth)
+    return this.addObject(vehicle, trackable)
+  }
 
   /**
    * Adds a ground electro-optical observatory to the universe.

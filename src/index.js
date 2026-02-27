@@ -18,6 +18,7 @@ export { default as LagrangeInterpolatedObject } from './engine/objects/Lagrange
 export { default as SGP4Satellite } from './engine/objects/SGP4Satellite.js'
 export { default as SimObject } from './engine/objects/SimObject.js'
 export { default as TwoBodySatellite } from './engine/objects/TwoBodySatellite.js'
+export { default as AirVehicle } from './engine/objects/AirVehicle.js'
 export { default as Observatory } from './engine/objects/Observatory.js'
 
 export { default as CallbackPositionProperty } from './engine/cesium/CallbackPositionProperty.js'

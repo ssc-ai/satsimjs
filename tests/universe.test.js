@@ -8,6 +8,7 @@ import AzElGimbal from '../src/engine/objects/AzElGimbal.js';
 import ElectroOpicalSensor from '../src/engine/objects/ElectroOpticalSensor.js';
 import LagrangeInterpolatedObject from '../src/engine/objects/LagrangeInterpolatedObject.js';
 import TwoBodySatellite from '../src/engine/objects/TwoBodySatellite.js';
+import AirVehicle from '../src/engine/objects/AirVehicle.js';
 import SimObject from '../src/engine/objects/SimObject.js';
 import Observatory from '../src/engine/objects/Observatory.js';
 import { Cartesian3, JulianDate } from 'cesium';
@@ -21,6 +22,7 @@ jest.mock('../src/engine/objects/AzElGimbal.js');
 jest.mock('../src/engine/objects/ElectroOpticalSensor.js');
 jest.mock('../src/engine/objects/LagrangeInterpolatedObject.js');
 jest.mock('../src/engine/objects/TwoBodySatellite.js');
+jest.mock('../src/engine/objects/AirVehicle.js');
 jest.mock('../src/engine/objects/SimObject.js');
 jest.mock('../src/engine/objects/Observatory.js');
 
@@ -518,6 +520,54 @@ describe('Universe', () => {
       expect(universe._nontrackables).toContain(mockLagrangeObject);
       expect(universe.trackables).not.toContain(mockLagrangeObject);
       expect(result).toBe(mockLagrangeObject);
+    });
+  });
+
+  describe('addAirVehicle', () => {
+    let mockVehicle;
+
+    beforeEach(() => {
+      mockVehicle = {
+        name: 'AirVehicle',
+        attach: jest.fn(),
+        update: jest.fn()
+      };
+
+      AirVehicle.mockImplementation((latitude, longitude, altitude, velocityNed, accelerationNed, heading, t0, name) => {
+        return { ...mockVehicle, name };
+      });
+    });
+
+    test('should create trackable air vehicle by default', () => {
+      const velocityNed = new Cartesian3(30, 5, -1);
+      const accelerationNed = new Cartesian3(0.2, 0, 0);
+      const t0 = new JulianDate();
+
+      const result = universe.addAirVehicle('Drone-1', 34.25, -117.1, 1200, velocityNed, accelerationNed, 90, t0);
+
+      expect(AirVehicle).toHaveBeenCalledWith(34.25, -117.1, 1200, velocityNed, accelerationNed, 90, t0, 'Drone-1');
+      expect(result.attach).toHaveBeenCalledWith(mockEarth);
+      expect(universe.trackables).toContain(result);
+      expect(universe._nontrackables).not.toContain(result);
+      expect(result.name).toBe('Drone-1');
+    });
+
+    test('should create non-trackable air vehicle when specified', () => {
+      const result = universe.addAirVehicle(
+        'Drone-2',
+        10,
+        20,
+        500,
+        new Cartesian3(10, 0, 0),
+        new Cartesian3(),
+        undefined,
+        new JulianDate(),
+        false
+      );
+
+      expect(universe._nontrackables).toContain(result);
+      expect(universe.trackables).not.toContain(result);
+      expect(result.name).toBe('Drone-2');
     });
   });
 

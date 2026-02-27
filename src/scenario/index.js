@@ -44,6 +44,60 @@ function resolveScenarioColor(input) {
   return Color.fromRandom({ alpha: 1.0 })
 }
 
+function numberOr(value, fallback = 0) {
+  const num = Number(value)
+  return Number.isFinite(num) ? num : fallback
+}
+
+function resolveVector3(value, fallback = [0, 0, 0]) {
+  if (value instanceof Cartesian3) {
+    return Cartesian3.clone(value)
+  }
+  if (Array.isArray(value) && value.length >= 3) {
+    return new Cartesian3(numberOr(value[0]), numberOr(value[1]), numberOr(value[2]))
+  }
+  if (defined(value) && typeof value === 'object') {
+    return new Cartesian3(numberOr(value.x), numberOr(value.y), numberOr(value.z))
+  }
+  return new Cartesian3(numberOr(fallback[0]), numberOr(fallback[1]), numberOr(fallback[2]))
+}
+
+function resolveVelocityNed(entry, headingDeg) {
+  const vNedInput = entry.velocity_ned ?? entry.velocityNed ?? entry.velocity
+  if (defined(vNedInput)) {
+    return resolveVector3(vNedInput)
+  }
+
+  const vEnuInput = entry.velocity_enu ?? entry.velocityEnu
+  if (defined(vEnuInput)) {
+    const vEnu = resolveVector3(vEnuInput)
+    return new Cartesian3(vEnu.y, vEnu.x, -vEnu.z)
+  }
+
+  const speed = numberOr(entry.speed ?? entry.horizontal_speed ?? entry.ground_speed)
+  const headingRad = numberOr(headingDeg) * Math.PI / 180
+  const verticalSpeed = numberOr(entry.vertical_speed ?? entry.climb_rate)
+  const vn = speed * Math.cos(headingRad)
+  const ve = speed * Math.sin(headingRad)
+  const vd = -verticalSpeed
+  return new Cartesian3(vn, ve, vd)
+}
+
+function resolveAccelerationNed(entry) {
+  const aNedInput = entry.acceleration_ned ?? entry.accelerationNed ?? entry.acceleration
+  if (defined(aNedInput)) {
+    return resolveVector3(aNedInput)
+  }
+
+  const aEnuInput = entry.acceleration_enu ?? entry.accelerationEnu
+  if (defined(aEnuInput)) {
+    const aEnu = resolveVector3(aEnuInput)
+    return new Cartesian3(aEnu.y, aEnu.x, -aEnu.z)
+  }
+
+  return new Cartesian3()
+}
+
 /**
  * Create a ground EO observatory and attach a visualizer.
  *
@@ -135,6 +189,69 @@ export function addTwoBody(universe, viewer, entry, idx = 0) {
   viewer.addObjectVisualizer(s, desc, {
     path: { show: false, leadTime: lead, trailTime: trail, resolution: res, material: color, width: 1 },
     point: { show: true, pixelSize: 2, color: color, outlineColor: color }
+  })
+}
+
+/**
+ * Add an air vehicle (drone/UAV) and attach a simple visualizer.
+ *
+ * @param {Universe} universe - The SatSim Universe instance.
+ * @param {Viewer} viewer - The SatSim viewer.
+ * @param {Object} entry - Air vehicle definition.
+ * @param {string} [entry.name] - Object name.
+ * @param {number|string} [entry.latitude] - Latitude in degrees.
+ * @param {number|string} [entry.longitude] - Longitude in degrees.
+ * @param {number|string} [entry.altitude=0] - Altitude in meters.
+ * @param {Array<number>} [entry.velocity_ned] - Velocity [north,east,down] in m/s.
+ * @param {Array<number>} [entry.acceleration_ned] - Acceleration [north,east,down] in m/s^2.
+ * @param {number|string} [entry.heading] - Heading in degrees clockwise from north.
+ * @param {string|Date} [entry.epoch] - Epoch as ISO string or Date.
+ * @param {string|Array<number>} [entry.color='random'] - Visualization color.
+ */
+export function addAirVehicle(universe, viewer, entry, idx = 0) {
+  const name = entry.name || `AirVehicle-${idx + 1}`
+  if (universe.hasObject && universe.hasObject(name)) {
+    console.log(`Air vehicle with name ${name} already exists, skipping creation.`)
+    return
+  }
+
+  const latitude = numberOr(entry.latitude ?? entry.lat, NaN)
+  const longitude = numberOr(entry.longitude ?? entry.lon ?? entry.lng, NaN)
+  const altitude = numberOr(entry.altitude ?? entry.alt)
+  if (!Number.isFinite(latitude) || !Number.isFinite(longitude)) {
+    console.log(`Skipping air vehicle ${name}: invalid latitude/longitude.`)
+    return
+  }
+
+  const headingInput = entry.heading ?? entry.direction
+  const heading = headingInput == null ? undefined : numberOr(headingInput)
+  const velocityNed = resolveVelocityNed(entry, heading ?? 0)
+  const accelerationNed = resolveAccelerationNed(entry)
+  const epoch = entry.epoch ? JulianDate.fromDate(new Date(entry.epoch)) : viewer.clock.currentTime.clone()
+
+  const v = universe.addAirVehicle(
+    name,
+    latitude,
+    longitude,
+    altitude,
+    velocityNed,
+    accelerationNed,
+    heading,
+    epoch,
+    true
+  )
+
+  const color = resolveScenarioColor(entry.color)
+  const headingDisplay = numberOr(heading, defined(v) ? v.heading : 0)
+  const desc = `Air vehicle initial state @ ${entry.epoch || 'current'}<br>` +
+    `lat=${latitude.toFixed(6)} deg, lon=${longitude.toFixed(6)} deg, alt=${altitude.toFixed(1)} m<br>` +
+    `v_ned[m/s]=${JSON.stringify([velocityNed.x, velocityNed.y, velocityNed.z])}<br>` +
+    `a_ned[m/s^2]=${JSON.stringify([accelerationNed.x, accelerationNed.y, accelerationNed.z])}<br>` +
+    `heading=${headingDisplay.toFixed(2)} deg`
+
+  viewer.addObjectVisualizer(v, desc, {
+    path: { show: false, leadTime: 600, trailTime: 600, resolution: 5, material: color, width: 1 },
+    point: { show: true, pixelSize: 4, color: color, outlineColor: color }
   })
 }
 
@@ -298,7 +415,7 @@ export function applySimulationParameters(viewer, params) {
  * Add an object described by a scenario entry.
  *
  * Supported types: GroundEOObservatory (and aliases), SGP4Satellite, TLECatalog,
- * TwoBodySatellite (and aliases).
+ * TwoBodySatellite (and aliases), AirVehicle (and aliases).
  *
  * @param {Universe} universe - The SatSim Universe instance.
  * @param {Viewer} viewer - The SatSim viewer.
@@ -346,7 +463,27 @@ export function addScenarioObject(universe, viewer, obj) {
         epoch: obj.epoch,
         orientation: obj.orientation,
         color: obj.color,
-      })
+      }, obj.__index)
+      break
+    }
+    case 'airvehicle':
+    case 'drone':
+    case 'uav': {
+      addAirVehicle(universe, viewer, {
+        name: obj.name,
+        latitude: (obj.latitude != null ? obj.latitude : obj.lat),
+        longitude: (obj.longitude != null ? obj.longitude : (obj.lon != null ? obj.lon : obj.lng)),
+        altitude: (obj.altitude != null ? obj.altitude : obj.alt),
+        velocity_ned: (obj.velocity_ned != null ? obj.velocity_ned : (obj.velocityNed != null ? obj.velocityNed : obj.velocity)),
+        acceleration_ned: (obj.acceleration_ned != null ? obj.acceleration_ned : (obj.accelerationNed != null ? obj.accelerationNed : obj.acceleration)),
+        heading: obj.heading,
+        direction: obj.direction,
+        speed: obj.speed,
+        vertical_speed: obj.vertical_speed,
+        climb_rate: obj.climb_rate,
+        epoch: obj.epoch,
+        color: obj.color,
+      }, obj.__index)
       break
     }
   }
