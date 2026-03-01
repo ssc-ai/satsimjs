@@ -5,6 +5,7 @@ import Toolbar from "./Toolbar.js"
 import SensorFieldOfRegardVisualizer from "../engine/cesium/SensorFieldOfRegardVisualizer.js"
 import SensorFieldOfViewVisualizer from "../engine/cesium/SensorFieldOfVIewVisualizer.js"
 import GeoBeltVisualizer from "../engine/cesium/GeoBeltVisualizer.js"
+import CallbackPositionProperty from "../engine/cesium/CallbackPositionProperty.js"
 import { createObjectPositionProperty, createObjectOrientationProperty, getObjectPositionInCesiumFrame } from "../engine/cesium/utils.js"
 import ElectroOpicalSensor from "../engine/objects/ElectroOpticalSensor.js"
 import CoverageGridVisualizer from "../engine/cesium/CoverageGridVisualizer.js"
@@ -594,16 +595,40 @@ function mixinViewer(viewer, universe, options) {
    * Add an observatory visualizer to the viewer.
    * @param {Observatory} observatory 
    * @param {string} description 
+   * @param {Entity} options
    */
-  viewer.addObservatoryVisualizer = function (observatory, description) {
-    viewer.addSiteVisualizer(observatory.site, description, {
-      billboard: {
-        image: viewer.BILLBOARD_GROUNDSTATION,
-        disableDepthTestDistance: 2000000,
-        show: true
-      },
-      simObjectRef: observatory
-    })
+  viewer.addObservatoryVisualizer = function (observatory, description, options = {}) {
+    const visualizerOptions = { ...options }
+    const modelVerticalOffsetMeters = Number(visualizerOptions.modelVerticalOffsetMeters ?? 0)
+    delete visualizerOptions.modelVerticalOffsetMeters
+
+    if (Number.isFinite(modelVerticalOffsetMeters) && modelVerticalOffsetMeters !== 0) {
+      const basePosition = createObjectPositionProperty(observatory.site, universe, viewer)
+      const scratchPosition = new Cartesian3()
+      const scratchUp = new Cartesian3()
+      const scratchOffset = new Cartesian3()
+      const scratchResult = new Cartesian3()
+      visualizerOptions.position = new CallbackPositionProperty((time, result) => {
+        const base = basePosition.getValue(time, scratchPosition)
+        if (!defined(base)) {
+          return undefined
+        }
+        Cartesian3.normalize(base, scratchUp)
+        Cartesian3.multiplyByScalar(scratchUp, modelVerticalOffsetMeters, scratchOffset)
+        const out = defined(result) ? result : scratchResult
+        return Cartesian3.subtract(base, scratchOffset, out)
+      }, false, () => viewer.referenceFrameView)
+    }
+
+    visualizerOptions.billboard = {
+      image: viewer.BILLBOARD_GROUNDSTATION,
+      disableDepthTestDistance: 2000000,
+      show: true,
+      ...(options.billboard ?? {})
+    }
+    visualizerOptions.simObjectRef = observatory
+
+    viewer.addSiteVisualizer(observatory.site, description, visualizerOptions)
     viewer.addSensorVisualizer(observatory.site, observatory.gimbal, observatory.sensor)
   }
 
@@ -616,9 +641,12 @@ function mixinViewer(viewer, universe, options) {
    */
   viewer.addObjectVisualizer = function (object, description, options, isStatic = false) {
 
-    // clear point object to be added to point collection for 2-3x better performance
-    const point = options.point
-    options.point = undefined
+    // Clone options so this helper never mutates caller-owned objects.
+    const visualizerOptions = { ...(options ?? {}) }
+
+    // Clear point object to be added to point collection for 2-3x better performance.
+    const point = visualizerOptions.point
+    delete visualizerOptions.point
 
     // create base entity which uses the traditional object position callback
     const base = {
@@ -628,7 +656,8 @@ function mixinViewer(viewer, universe, options) {
       simObjectRef: object,
       allowPicking: true
     }
-    const entity = viewer.entities.add(Object.assign(base, options))
+    const entity = viewer.entities.add(Object.assign(base, visualizerOptions))
+    object.visualizer = entity
 
     // create new point primitive
     if (defined(point)) {
@@ -637,7 +666,6 @@ function mixinViewer(viewer, universe, options) {
       entity.update = function (time, universe) {
         entity.point2.position = getObjectPositionInCesiumFrame(viewer, universe, object, time)
       }
-      object.visualizer = entity
       object.updateListeners.push(entity);
     }
   }

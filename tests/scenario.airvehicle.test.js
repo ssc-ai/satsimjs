@@ -1,5 +1,5 @@
 import { jest } from '@jest/globals'
-import { Cartesian3, Color, JulianDate } from 'cesium'
+import { Cartesian3, Color, JulianDate, Quaternion } from 'cesium'
 import { addScenarioObject } from '../src/scenario/index.js'
 
 describe('scenario air vehicle support', () => {
@@ -26,7 +26,9 @@ describe('scenario air vehicle support', () => {
         altitude,
         velocityNed,
         accelerationNed,
-        heading,
+        heading: heading ?? 0,
+        position: Cartesian3.fromDegrees(longitude, latitude, altitude),
+        update: jest.fn(),
       })),
     }
   })
@@ -80,6 +82,114 @@ describe('scenario air vehicle support', () => {
     expect(velocityNed.x).toBeCloseTo(0, 8)
     expect(velocityNed.y).toBeCloseTo(50, 8)
     expect(velocityNed.z).toBeCloseTo(-3, 8)
+  })
+
+  test('accepts string model entries and applies default model options', () => {
+    addScenarioObject(universe, viewer, {
+      type: 'AirVehicle',
+      name: 'Drone-Model-String',
+      latitude: 34.25,
+      longitude: -117.1,
+      altitude: 1200,
+      heading: 45,
+      model: '/assets/models/CesiumDrone.glb',
+    })
+
+    expect(viewer.addObjectVisualizer).toHaveBeenCalledTimes(1)
+    const options = viewer.addObjectVisualizer.mock.calls[0][2]
+    expect(options.model.uri).toBe('/assets/models/CesiumDrone.glb')
+    expect(options.model.minimumPixelSize).toBe(64)
+    expect(options.model.maximumScale).toBe(20000)
+    expect(options.orientation).toBeDefined()
+
+    const q = options.orientation.getValue(viewer.clock.currentTime)
+    expect(q).toBeDefined()
+    expect(Number.isFinite(q.x)).toBe(true)
+    expect(Number.isFinite(q.y)).toBe(true)
+    expect(Number.isFinite(q.z)).toBe(true)
+    expect(Number.isFinite(q.w)).toBe(true)
+  })
+
+  test('accepts object model entries with aliases and heading offset', () => {
+    const withOffset = {
+      type: 'AirVehicle',
+      name: 'Drone-Model-Offset',
+      latitude: 34.25,
+      longitude: -117.1,
+      altitude: 1200,
+      heading: 0,
+      model: {
+        path: '/assets/models/CesiumDrone.glb',
+        scale: 1.5,
+        minimumPixelSize: 80,
+        heading_offset_deg: 90,
+      },
+    }
+    addScenarioObject(universe, viewer, withOffset)
+
+    const withOffsetOptions = viewer.addObjectVisualizer.mock.calls[0][2]
+    expect(withOffsetOptions.model.uri).toBe('/assets/models/CesiumDrone.glb')
+    expect(withOffsetOptions.model.scale).toBeCloseTo(1.5, 8)
+    expect(withOffsetOptions.model.minimumPixelSize).toBe(80)
+    expect(withOffsetOptions.model.maximumScale).toBe(20000)
+    expect(withOffsetOptions.model.path).toBeUndefined()
+    expect(withOffsetOptions.model.heading_offset_deg).toBeUndefined()
+    const qWithOffset = withOffsetOptions.orientation.getValue(viewer.clock.currentTime)
+
+    viewer.addObjectVisualizer.mockClear()
+    addScenarioObject(universe, viewer, {
+      ...withOffset,
+      model: {
+        uri: '/assets/models/CesiumDrone.glb',
+        scale: 1.5,
+        minimumPixelSize: 80,
+        headingOffsetDeg: 0,
+      },
+    })
+
+    const noOffsetOptions = viewer.addObjectVisualizer.mock.calls[0][2]
+    const qWithoutOffset = noOffsetOptions.orientation.getValue(viewer.clock.currentTime)
+    expect(Quaternion.equalsEpsilon(qWithOffset, qWithoutOffset, 1e-12)).toBe(false)
+  })
+
+  test('supports model pitch/roll offset aliases and strips them from Cesium model options', () => {
+    addScenarioObject(universe, viewer, {
+      type: 'AirVehicle',
+      name: 'Drone-Model-Roll-Offset',
+      latitude: 34.25,
+      longitude: -117.1,
+      altitude: 1200,
+      heading: 0,
+      model: {
+        uri: '/assets/models/CesiumDrone.glb',
+        roll_offset_deg: 90,
+        pitch_offset_deg: 0,
+      },
+    })
+
+    const withOffsetOptions = viewer.addObjectVisualizer.mock.calls[0][2]
+    expect(withOffsetOptions.model.roll_offset_deg).toBeUndefined()
+    expect(withOffsetOptions.model.pitch_offset_deg).toBeUndefined()
+    const qWithOffset = withOffsetOptions.orientation.getValue(viewer.clock.currentTime)
+
+    viewer.addObjectVisualizer.mockClear()
+    addScenarioObject(universe, viewer, {
+      type: 'AirVehicle',
+      name: 'Drone-Model-Roll-Offset',
+      latitude: 34.25,
+      longitude: -117.1,
+      altitude: 1200,
+      heading: 0,
+      model: {
+        uri: '/assets/models/CesiumDrone.glb',
+        rollOffsetDeg: 0,
+        pitchOffsetDeg: 0,
+      },
+    })
+
+    const noOffsetOptions = viewer.addObjectVisualizer.mock.calls[0][2]
+    const qWithoutOffset = noOffsetOptions.orientation.getValue(viewer.clock.currentTime)
+    expect(Quaternion.equalsEpsilon(qWithOffset, qWithoutOffset, 1e-12)).toBe(false)
   })
 
   test('skips invalid air vehicle definitions without coordinates', () => {

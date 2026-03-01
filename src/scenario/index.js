@@ -13,8 +13,30 @@
  * browser UIs, notebooks, and apps embedding SatSimJS.
  */
 
-import { Color, Cartesian3, JulianDate, Viewer, defined } from 'cesium'
+import {
+  CallbackProperty,
+  Cartesian3,
+  Color,
+  defined,
+  JulianDate,
+  Matrix3,
+  Matrix4,
+  Quaternion,
+  Transforms,
+  Viewer
+} from 'cesium'
 import Universe from '../engine/Universe.js'
+
+const DEFAULT_MODEL_MINIMUM_PIXEL_SIZE = 64
+const DEFAULT_MODEL_MAXIMUM_SCALE = 20000
+
+const _scratchEnuToFixedTransform = new Matrix4()
+const _scratchEnuToFixedRotation = new Matrix3()
+const _scratchBodyToEnuRotation = new Matrix3()
+const _scratchBodyOffsetRotation = new Matrix3()
+const _scratchRotX = new Matrix3()
+const _scratchRotY = new Matrix3()
+const _scratchBodyToFixedRotation = new Matrix3()
 
 function resolveScenarioColor(input) {
   if (Array.isArray(input) && input.length === 3) {
@@ -98,6 +120,124 @@ function resolveAccelerationNed(entry) {
   return new Cartesian3()
 }
 
+function resolveScenarioModel(input) {
+  const fallback = {
+    modelGraphics: undefined,
+    headingOffsetDeg: 0,
+    pitchOffsetDeg: 0,
+    rollOffsetDeg: 0,
+    verticalOffsetMeters: 0
+  }
+  if (!defined(input)) {
+    return fallback
+  }
+
+  if (typeof input === 'string') {
+    const uri = input.trim()
+    if (!uri) {
+      return fallback
+    }
+    return {
+      modelGraphics: {
+        uri,
+        minimumPixelSize: DEFAULT_MODEL_MINIMUM_PIXEL_SIZE,
+        maximumScale: DEFAULT_MODEL_MAXIMUM_SCALE
+      },
+      headingOffsetDeg: 0,
+      pitchOffsetDeg: 0,
+      rollOffsetDeg: 0,
+      verticalOffsetMeters: 0
+    }
+  }
+
+  if (typeof input !== 'object') {
+    return fallback
+  }
+
+  const modelGraphics = { ...input }
+  const uriInput = modelGraphics.uri ?? modelGraphics.url ?? modelGraphics.path
+  const uri = defined(uriInput) ? String(uriInput).trim() : ''
+  if (!uri) {
+    return fallback
+  }
+  modelGraphics.uri = uri
+  delete modelGraphics.url
+  delete modelGraphics.path
+
+  const headingOffsetDeg = numberOr(modelGraphics.headingOffsetDeg ?? modelGraphics.heading_offset_deg)
+  const pitchOffsetDeg = numberOr(modelGraphics.pitchOffsetDeg ?? modelGraphics.pitch_offset_deg)
+  const rollOffsetDeg = numberOr(modelGraphics.rollOffsetDeg ?? modelGraphics.roll_offset_deg)
+  const verticalOffsetMeters = numberOr(
+    modelGraphics.verticalOffsetMeters ??
+    modelGraphics.vertical_offset_m ??
+    modelGraphics.modelVerticalOffsetMeters
+  )
+  delete modelGraphics.headingOffsetDeg
+  delete modelGraphics.heading_offset_deg
+  delete modelGraphics.pitchOffsetDeg
+  delete modelGraphics.pitch_offset_deg
+  delete modelGraphics.rollOffsetDeg
+  delete modelGraphics.roll_offset_deg
+  delete modelGraphics.verticalOffsetMeters
+  delete modelGraphics.vertical_offset_m
+  delete modelGraphics.modelVerticalOffsetMeters
+
+  modelGraphics.minimumPixelSize = numberOr(modelGraphics.minimumPixelSize, DEFAULT_MODEL_MINIMUM_PIXEL_SIZE)
+  modelGraphics.maximumScale = numberOr(modelGraphics.maximumScale, DEFAULT_MODEL_MAXIMUM_SCALE)
+
+  return { modelGraphics, headingOffsetDeg, pitchOffsetDeg, rollOffsetDeg, verticalOffsetMeters }
+}
+
+function resolveScenarioModelVisualizerOptions(input, includeVerticalOffset = false) {
+  const resolved = resolveScenarioModel(input)
+  if (!defined(resolved.modelGraphics)) {
+    return { ...resolved, visualizerModelOptions: undefined }
+  }
+
+  const visualizerModelOptions = { model: resolved.modelGraphics }
+  if (includeVerticalOffset && resolved.verticalOffsetMeters !== 0) {
+    visualizerModelOptions.modelVerticalOffsetMeters = resolved.verticalOffsetMeters
+  }
+  return { ...resolved, visualizerModelOptions }
+}
+
+function createAirVehicleModelOrientationProperty(vehicle, universe, headingOffsetDeg = 0, pitchOffsetDeg = 0, rollOffsetDeg = 0) {
+  return new CallbackProperty((time, result) => {
+    vehicle.update(time, universe)
+    const position = vehicle.position
+    if (!defined(position)) {
+      return Quaternion.clone(Quaternion.IDENTITY, result)
+    }
+
+    // Vehicle heading is defined clockwise from north. Build a right-handed
+    // body frame in ENU where +X is forward, +Y is left, and +Z is up.
+    const headingRad = numberOr(vehicle.heading + headingOffsetDeg) * Math.PI / 180
+    const sinHeading = Math.sin(headingRad)
+    const cosHeading = Math.cos(headingRad)
+    _scratchBodyToEnuRotation[0] = sinHeading
+    _scratchBodyToEnuRotation[1] = cosHeading
+    _scratchBodyToEnuRotation[2] = 0
+    _scratchBodyToEnuRotation[3] = -cosHeading
+    _scratchBodyToEnuRotation[4] = sinHeading
+    _scratchBodyToEnuRotation[5] = 0
+    _scratchBodyToEnuRotation[6] = 0
+    _scratchBodyToEnuRotation[7] = 0
+    _scratchBodyToEnuRotation[8] = 1
+
+    const pitchOffsetRad = numberOr(pitchOffsetDeg) * Math.PI / 180
+    const rollOffsetRad = numberOr(rollOffsetDeg) * Math.PI / 180
+    Matrix3.fromRotationY(pitchOffsetRad, _scratchRotY)
+    Matrix3.fromRotationX(rollOffsetRad, _scratchRotX)
+    Matrix3.multiply(_scratchRotY, _scratchRotX, _scratchBodyOffsetRotation)
+    Matrix3.multiply(_scratchBodyToEnuRotation, _scratchBodyOffsetRotation, _scratchBodyToEnuRotation)
+
+    const enuToFixedTransform = Transforms.eastNorthUpToFixedFrame(position, undefined, _scratchEnuToFixedTransform)
+    const enuToFixedRotation = Matrix4.getMatrix3(enuToFixedTransform, _scratchEnuToFixedRotation)
+    const bodyToFixedRotation = Matrix3.multiply(enuToFixedRotation, _scratchBodyToEnuRotation, _scratchBodyToFixedRotation)
+    return Quaternion.fromRotationMatrix(bodyToFixedRotation, result)
+  }, false)
+}
+
 /**
  * Create a ground EO observatory and attach a visualizer.
  *
@@ -113,6 +253,7 @@ function resolveAccelerationNed(entry) {
  * @param {number|string} [obs.y_fov=5] - Sensor FOV in Y (deg).
  * @param {number|string} [obs.x_fov=5] - Sensor FOV in X (deg).
  * @param {Array} [obs.field_of_regard=[]] - Optional field of regard.
+ * @param {string|Object} [obs.model] - Optional 3D model URI or Cesium model options.
  */
 export function addObservatory(universe, viewer, obs) {
   if (universe.hasObject && universe.hasObject(obs.name)) {
@@ -138,7 +279,8 @@ export function addObservatory(universe, viewer, obs) {
     `Longitude: ${obs.longitude} deg<br>` +
     `Altitude: ${obs.altitude ?? 0} m</div>`
 
-  viewer.addObservatoryVisualizer(o, desc)
+  const { visualizerModelOptions } = resolveScenarioModelVisualizerOptions(obs.model, true)
+  viewer.addObservatoryVisualizer(o, desc, visualizerModelOptions)
 }
 
 /**
@@ -159,6 +301,7 @@ export function addObservatory(universe, viewer, obs) {
  * @param {string|Date} [entry.epoch] - Epoch as ISO string or Date.
  * @param {string} [entry.orientation='nadir'] - Orientation strategy.
  * @param {string|Array<number>} [entry.color='random'] - Visualization color for the satellite.
+ * @param {string|Object} [entry.model] - Optional 3D model URI or Cesium model options.
  */
 export function addTwoBody(universe, viewer, entry, idx = 0) {
   const name = entry.name || `TwoBody-${idx + 1}`
@@ -185,10 +328,12 @@ export function addTwoBody(universe, viewer, entry, idx = 0) {
   const lead = (s && s.period) ? (s.period / 2) : 1800
   const trail = (s && s.period) ? (s.period / 2) : 1800
   const res = (s && s.period && s.eccentricity !== undefined) ? (s.period / (500 / (1 - s.eccentricity))) : 60
+  const { visualizerModelOptions } = resolveScenarioModelVisualizerOptions(entry.model)
 
   viewer.addObjectVisualizer(s, desc, {
     path: { show: false, leadTime: lead, trailTime: trail, resolution: res, material: color, width: 1 },
-    point: { show: true, pixelSize: 2, color: color, outlineColor: color }
+    point: { show: true, pixelSize: 2, color: color, outlineColor: color },
+    ...(visualizerModelOptions ?? {})
   })
 }
 
@@ -207,6 +352,7 @@ export function addTwoBody(universe, viewer, entry, idx = 0) {
  * @param {number|string} [entry.heading] - Heading in degrees clockwise from north.
  * @param {string|Date} [entry.epoch] - Epoch as ISO string or Date.
  * @param {string|Array<number>} [entry.color='random'] - Visualization color.
+ * @param {string|Object} [entry.model] - Optional 3D model URI or Cesium model options.
  */
 export function addAirVehicle(universe, viewer, entry, idx = 0) {
   const name = entry.name || `AirVehicle-${idx + 1}`
@@ -228,6 +374,13 @@ export function addAirVehicle(universe, viewer, entry, idx = 0) {
   const velocityNed = resolveVelocityNed(entry, heading ?? 0)
   const accelerationNed = resolveAccelerationNed(entry)
   const epoch = entry.epoch ? JulianDate.fromDate(new Date(entry.epoch)) : viewer.clock.currentTime.clone()
+  const {
+    modelGraphics,
+    headingOffsetDeg,
+    pitchOffsetDeg,
+    rollOffsetDeg,
+    visualizerModelOptions
+  } = resolveScenarioModelVisualizerOptions(entry.model)
 
   const v = universe.addAirVehicle(
     name,
@@ -249,10 +402,15 @@ export function addAirVehicle(universe, viewer, entry, idx = 0) {
     `a_ned[m/s^2]=${JSON.stringify([accelerationNed.x, accelerationNed.y, accelerationNed.z])}<br>` +
     `heading=${headingDisplay.toFixed(2)} deg`
 
-  viewer.addObjectVisualizer(v, desc, {
+  const visualizerOptions = {
     path: { show: false, leadTime: 600, trailTime: 600, resolution: 5, material: color, width: 1 },
-    point: { show: true, pixelSize: 4, color: color, outlineColor: color }
-  })
+    point: { show: true, pixelSize: 4, color: color, outlineColor: color },
+    ...(visualizerModelOptions ?? {})
+  }
+  if (defined(modelGraphics)) {
+    visualizerOptions.orientation = createAirVehicleModelOrientationProperty(v, universe, headingOffsetDeg, pitchOffsetDeg, rollOffsetDeg)
+  }
+  viewer.addObjectVisualizer(v, desc, visualizerOptions)
 }
 
 /**
@@ -265,17 +423,20 @@ export function addAirVehicle(universe, viewer, entry, idx = 0) {
  * @param {string} tle2 - Line 2.
  * @param {string} [orientation='nadir'] - Orientation strategy.
  * @param {string|Array<number>} [color='random'] - Visualization color for the satellite.
+ * @param {string|Object} [modelInput] - Optional 3D model URI or Cesium model options.
  */
-export function addSatelliteFromTLE(universe, viewer, name, tle1, tle2, orientation = 'nadir', colorInput) {
+export function addSatelliteFromTLE(universe, viewer, name, tle1, tle2, orientation = 'nadir', colorInput, modelInput) {
   const s = universe.addSGP4Satellite(name, tle1, tle2, orientation || 'nadir', true)
   const color = resolveScenarioColor(colorInput)
   const lead = (s && s.period) ? (s.period / 2) : 1800
   const trail = (s && s.period) ? (s.period / 2) : 1800
   const res = (s && s.period && s.eccentricity !== undefined) ? (s.period / (500 / (1 - s.eccentricity))) : 60
+  const { visualizerModelOptions } = resolveScenarioModelVisualizerOptions(modelInput)
   
   viewer.addObjectVisualizer(s, 'TLE', {
     path: { show: false, leadTime: lead, trailTime: trail, resolution: res, material: color, width: 1 },
-    point: { show: true, pixelSize: 2, color: color, outlineColor: color }
+    point: { show: true, pixelSize: 2, color: color, outlineColor: color },
+    ...(visualizerModelOptions ?? {})
   })
 }
 
@@ -324,6 +485,7 @@ export function parseTleCatalogText(text, limit = Infinity) {
  * - url|path: URL to fetch TLE text from when no inline data is provided.
  * - limit: Maximum satellites to add (default 500000).
  * - orientation: Optional orientation strategy (e.g., 'nadir').
+ * - model: Optional 3D model URI or Cesium model options applied to each catalog object.
  *
  * @param {Universe} universe - The SatSim Universe instance.
  * @param {Viewer} viewer - The SatSim viewer.
@@ -340,7 +502,7 @@ export async function addTleCatalog(universe, viewer, obj) {
   }
   const list = parseTleCatalogText(text, limit)
   list.slice(0, limit).forEach((sat) => {
-    addSatelliteFromTLE(universe, viewer, sat.name, sat.l1, sat.l2, obj.orientation, obj.color)
+    addSatelliteFromTLE(universe, viewer, sat.name, sat.l1, sat.l2, obj.orientation, obj.color, obj.model)
   })
 }
 
@@ -440,12 +602,13 @@ export function addScenarioObject(universe, viewer, obj) {
         y_fov: obj.y_fov,
         x_fov: obj.x_fov,
         field_of_regard: obj.field_of_regard,
+        model: obj.model,
       })
       break
     }
     case 'sgp4satellite':
     case 'sgp4': {
-      addSatelliteFromTLE(universe, viewer, obj.name || String(obj.tle1 || '').trim(), obj.tle1, obj.tle2, obj.orientation, obj.color)
+      addSatelliteFromTLE(universe, viewer, obj.name || String(obj.tle1 || '').trim(), obj.tle1, obj.tle2, obj.orientation, obj.color, obj.model)
       break
     }
     case 'tlecatalog':
@@ -463,6 +626,7 @@ export function addScenarioObject(universe, viewer, obj) {
         epoch: obj.epoch,
         orientation: obj.orientation,
         color: obj.color,
+        model: obj.model,
       }, obj.__index)
       break
     }
@@ -483,6 +647,7 @@ export function addScenarioObject(universe, viewer, obj) {
         climb_rate: obj.climb_rate,
         epoch: obj.epoch,
         color: obj.color,
+        model: obj.model,
       }, obj.__index)
       break
     }

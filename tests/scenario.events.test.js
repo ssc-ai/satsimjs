@@ -1,7 +1,7 @@
 import { jest } from '@jest/globals'
 import Universe from '../src/engine/Universe.js'
 import { scheduleScenarioEvents, loadScenario } from '../src/scenario/index.js'
-import { JulianDate } from 'cesium'
+import { Cartesian3, JulianDate } from 'cesium'
 
 // Mock core objects to keep Universe lightweight
 jest.mock('../src/engine/objects/Earth.js', () => {
@@ -86,5 +86,75 @@ describe('Scenario event scheduling', () => {
     ] }
     loadScenario(universe, viewer, cfg)
     expect(universe.events.size()).toBe(3)
+  })
+
+  test('airVehicleManeuver updates vehicle velocity and acceleration', () => {
+    const vehicle = {
+      name: 'Drone-Alpha',
+      velocityNed: new Cartesian3(1, 1, 0),
+      accelerationNed: new Cartesian3(0, 0, 0),
+      heading: 0,
+      update: jest.fn()
+    }
+    universe.addObject(vehicle)
+
+    scheduleScenarioEvents(universe, viewer, [
+      {
+        time: 0,
+        type: 'airVehicleManeuver',
+        object: 'Drone-Alpha',
+        velocity_ned: [12, 4, -1],
+        acceleration_ned: [0.2, -0.1, 0.0]
+      }
+    ])
+
+    universe.update(start)
+    expect(vehicle.velocityNed).toEqual(new Cartesian3(12, 4, -1))
+    expect(vehicle.accelerationNed).toEqual(new Cartesian3(0.2, -0.1, 0))
+  })
+
+  test('setAirVehicleVelocityNed derives velocity from speed/heading/vertical_speed', () => {
+    const vehicle = {
+      name: 'Drone-Alpha',
+      velocityNed: new Cartesian3(0, 0, 0),
+      accelerationNed: new Cartesian3(0, 0, 0),
+      heading: 0,
+      update: jest.fn()
+    }
+    universe.addObject(vehicle)
+
+    scheduleScenarioEvents(universe, viewer, [
+      {
+        time: 0,
+        type: 'setAirVehicleVelocityNed',
+        object: 'Drone-Alpha',
+        speed: 50,
+        heading: 90,
+        vertical_speed: 3
+      }
+    ])
+
+    universe.update(start)
+    expect(vehicle.velocityNed.x).toBeCloseTo(0, 8)
+    expect(vehicle.velocityNed.y).toBeCloseTo(50, 8)
+    expect(vehicle.velocityNed.z).toBeCloseTo(-3, 8)
+  })
+
+  test('setAirVehicleHeading updates heading directly', () => {
+    const vehicle = {
+      name: 'Drone-Alpha',
+      velocityNed: new Cartesian3(0, 0, 0),
+      accelerationNed: new Cartesian3(0, 0, 0),
+      heading: 10,
+      update: jest.fn()
+    }
+    universe.addObject(vehicle)
+
+    scheduleScenarioEvents(universe, viewer, [
+      { time: 0, type: 'setAirVehicleHeading', object: 'Drone-Alpha', heading: 225 }
+    ])
+
+    universe.update(start)
+    expect(vehicle.heading).toBeCloseTo(225, 8)
   })
 })
