@@ -316,10 +316,12 @@ function mixinViewer(viewer, universe, options) {
         if (e[i].id.allowPicking !== false) {
           viewer.objectPickListener(e[i].id.simObjectRef, viewer.lastPicked)
           viewer.lastPicked = e[i].id.simObjectRef
+          setTrackedObjectMenuSelection(e[i].id.simObjectRef)
           return e[i]
         } else if (e[i].collection === viewer.points) {
           viewer.objectPickListener(e[i].primitive.id.simObjectRef, viewer.lastPicked)
           viewer.lastPicked = e[i].primitive.id.simObjectRef
+          setTrackedObjectMenuSelection(e[i].primitive.id.simObjectRef)
           return e[i].primitive
         }
       }
@@ -327,6 +329,7 @@ function mixinViewer(viewer, universe, options) {
 
     viewer.objectPickListener(undefined, viewer.lastPicked)
     viewer.lastPicked = undefined
+    setTrackedObjectMenuSelection(undefined)
 
     return undefined
   }
@@ -339,6 +342,7 @@ function mixinViewer(viewer, universe, options) {
     sensorFieldOfViewButton.enable(false)
     geoButton.enable(false)
     cameraViewMenu.enable(false)
+    if (defined(trackedObjectCombo)) trackedObjectCombo.enable(false)
     viewer.showVisual(viewer.geoBeltVisualizer, false)
     viewer.showVisual(viewer.sensorForVisualizers, false)
     viewer.showVisual(viewer.sensorFovVisualizers, false)
@@ -354,6 +358,7 @@ function mixinViewer(viewer, universe, options) {
     sensorFieldOfViewButton.enable(false)
     geoButton.enable(false)
     cameraViewMenu.enable(false)
+    if (defined(trackedObjectCombo)) trackedObjectCombo.enable(false)
     viewer.showVisual(viewer.geoBeltVisualizer, false)
     viewer.showVisual(viewer.sensorForVisualizers, false)
     viewer.showVisual(viewer.sensorFovVisualizers, false)
@@ -455,6 +460,7 @@ function mixinViewer(viewer, universe, options) {
       sensorFieldOfViewButton.enable(false)
       geoButton.enable(false)
       cameraViewMenu.enable(false)
+      if (defined(trackedObjectCombo)) trackedObjectCombo.enable(false)
       viewer.showVisual(viewer.geoBeltVisualizer, false)
       viewer.showVisual(viewer.sensorForVisualizers, false)
       viewer.showVisual(viewer.sensorFovVisualizers, false)
@@ -465,6 +471,7 @@ function mixinViewer(viewer, universe, options) {
       sensorFieldOfViewButton.enable(true)
       geoButton.enable(true)
       cameraViewMenu.enable(true)
+      if (defined(trackedObjectCombo)) trackedObjectCombo.enable(getTrackedObjectEnabledState())
       viewer.showVisual(viewer.geoBeltVisualizer, geoButton.checked)
       viewer.showVisual(viewer.sensorForVisualizers, sensorFieldOfRegardButton.checked)
       viewer.showVisual(viewer.sensorFovVisualizers, sensorFieldOfViewButton.checked)
@@ -510,6 +517,145 @@ function mixinViewer(viewer, universe, options) {
   ///////////////////
   // Viewer Mixins
   ///////////////////
+
+  const trackedObjectEntries = []
+  let trackedObjectMenuSelectedObject = undefined
+
+  let trackedObjectCombo = undefined
+
+  function isTrackedObjectEntryVisible(entry, filterText) {
+    if (!filterText) return true
+    return entry.nameLower.indexOf(filterText) !== -1
+  }
+
+  function getTrackedObjectEntryIndex(simObject) {
+    for (let i = 0; i < trackedObjectEntries.length; i++) {
+      if (trackedObjectEntries[i].simObject === simObject) {
+        return i
+      }
+    }
+    return -1
+  }
+
+  function getTrackedObjectEnabledState() {
+    return scene.mode === SceneMode.SCENE3D && trackedObjectEntries.length > 0
+  }
+
+  function showTrackedObjectMenu() {
+    if (!defined(trackedObjectCombo)) return
+    if (!getTrackedObjectEnabledState()) return
+    trackedObjectCombo.showMenu()
+  }
+
+  function hideTrackedObjectMenu() {
+    if (!defined(trackedObjectCombo)) return
+    trackedObjectCombo.hideMenu()
+  }
+
+  function rebuildTrackedObjectMenu() {
+    if (!defined(trackedObjectCombo)) {
+      return
+    }
+
+    const filterText = String(trackedObjectCombo.input.value ?? '').trim().toLowerCase()
+    const matchingEntries = []
+    for (let i = 0; i < trackedObjectEntries.length; i++) {
+      const entry = trackedObjectEntries[i]
+      if (isTrackedObjectEntryVisible(entry, filterText)) {
+        matchingEntries.push(entry)
+      }
+    }
+
+    const options = []
+    for (let i = 0; i < matchingEntries.length; i++) {
+      const entry = matchingEntries[i]
+      options.push({
+        text: entry.name,
+        simObjectRef: entry.simObject,
+        onselect: function () {
+          focusAndTrackObject(entry.simObject)
+        }
+      })
+    }
+
+    trackedObjectCombo.menu.innerHTML = ''
+    trackedObjectCombo.menu.userOptions = []
+    if (options.length > 0) {
+      toolbar.addToolbarMenu(options, trackedObjectCombo.menu)
+    } else {
+      const emptyOption = document.createElement("option")
+      emptyOption.textContent = "No matches"
+      emptyOption.disabled = true
+      trackedObjectCombo.menu.appendChild(emptyOption)
+    }
+
+    let selectedIndex = -1
+    for (let i = 0; i < options.length; i++) {
+      if (options[i].simObjectRef === trackedObjectMenuSelectedObject) {
+        selectedIndex = i
+        break
+      }
+    }
+    trackedObjectCombo.menu.size = Math.max(2, Math.min(8, options.length || 1))
+    trackedObjectCombo.menu.selectedIndex = selectedIndex
+
+    const enabled = getTrackedObjectEnabledState()
+    trackedObjectCombo.enable(enabled)
+    if (!enabled) {
+      hideTrackedObjectMenu()
+    }
+  }
+
+  function focusAndTrackObject(simObject) {
+    if (!defined(simObject) || !defined(simObject.visualizer)) {
+      return
+    }
+
+    if (viewer.cameraMode !== "world") {
+      viewer.setCameraMode("world")
+      cameraViewMenu.selectedIndex = 0
+    }
+    viewer.referenceFrameView = ReferenceFrame.FIXED
+    if (defined(trackedObjectCombo)) {
+      trackedObjectCombo.input.value = simObject.name
+    }
+
+    const entity = simObject.visualizer
+    viewer.selectedEntity = entity
+    viewer.pickedObject = simObject
+    viewer.objectPickListener(simObject, viewer.lastPicked)
+    viewer.lastPicked = simObject
+
+    if (defined(entity.position)) {
+      viewer.trackedEntity = entity
+    } else {
+      viewer.zoomTo(entity)
+    }
+
+    setTrackedObjectMenuSelection(simObject)
+    hideTrackedObjectMenu()
+  }
+
+  function setTrackedObjectMenuSelection(simObject) {
+    trackedObjectMenuSelectedObject = simObject
+    if (defined(simObject) && defined(trackedObjectCombo)) {
+      trackedObjectCombo.input.value = String(simObject.name ?? '')
+    }
+    rebuildTrackedObjectMenu()
+  }
+
+  function addTrackedObjectMenuEntry(simObject) {
+    if (!defined(simObject) || !defined(simObject.visualizer) || getTrackedObjectEntryIndex(simObject) !== -1) {
+      return
+    }
+
+    trackedObjectEntries.push({
+      name: String(simObject.name ?? ''),
+      nameLower: String(simObject.name ?? '').toLowerCase(),
+      simObject
+    })
+    rebuildTrackedObjectMenu()
+  }
 
   /**
    * Object pick listener. This should not be called directly.
@@ -650,6 +796,7 @@ function mixinViewer(viewer, universe, options) {
 
     const entity = viewer.entities.add(Object.assign(base, visualizerOptions))
     site.visualizer = entity
+    addTrackedObjectMenuEntry(site)
   }
 
   /**
@@ -709,6 +856,7 @@ function mixinViewer(viewer, universe, options) {
     }
     const entity = viewer.entities.add(Object.assign(base, visualizerOptions))
     object.visualizer = entity
+    addTrackedObjectMenuEntry(object)
 
     // create new point primitive
     if (defined(point)) {
@@ -1138,6 +1286,67 @@ function mixinViewer(viewer, universe, options) {
       },
     },
   ]);
+  toolbar.addSeparator();
+  trackedObjectCombo = toolbar.addToolbarComboMenu('Track Object...')
+  trackedObjectCombo.input.addEventListener('focus', function () {
+    showTrackedObjectMenu()
+  })
+  trackedObjectCombo.input.addEventListener('click', function () {
+    showTrackedObjectMenu()
+  })
+  trackedObjectCombo.input.addEventListener('input', function () {
+    trackedObjectMenuSelectedObject = undefined
+    rebuildTrackedObjectMenu()
+    showTrackedObjectMenu()
+  })
+  trackedObjectCombo.input.addEventListener('keydown', function (ev) {
+    if (ev.key === 'Escape') {
+      hideTrackedObjectMenu()
+      return
+    }
+    if (ev.key === 'ArrowDown') {
+      showTrackedObjectMenu()
+      trackedObjectCombo.menu.focus()
+      ev.preventDefault()
+      return
+    }
+    if (ev.key !== 'Enter') return
+
+    let selected = trackedObjectCombo.menu.userOptions[trackedObjectCombo.menu.selectedIndex]
+    if (!selected || !selected.simObjectRef) {
+      selected = trackedObjectCombo.menu.userOptions[0]
+    }
+    if (selected && selected.simObjectRef) {
+      focusAndTrackObject(selected.simObjectRef)
+      ev.preventDefault()
+    }
+  })
+  trackedObjectCombo.menu.addEventListener('keydown', function (ev) {
+    if (ev.key !== 'Escape') return
+    hideTrackedObjectMenu()
+    trackedObjectCombo.input.focus()
+    ev.preventDefault()
+  })
+  trackedObjectCombo.menu.addEventListener('change', function () {
+    hideTrackedObjectMenu()
+    trackedObjectCombo.input.focus()
+  })
+  trackedObjectCombo.container.addEventListener('focusout', function () {
+    setTimeout(function () {
+      if (!defined(trackedObjectCombo)) return
+      if (!trackedObjectCombo.container.contains(document.activeElement)) {
+        hideTrackedObjectMenu()
+      }
+    }, 0)
+  })
+  viewer._element.addEventListener('pointerdown', function (ev) {
+    if (!defined(trackedObjectCombo)) return
+    if (!trackedObjectCombo.container.contains(ev.target)) {
+      hideTrackedObjectMenu()
+    }
+  }, true)
+  trackedObjectCombo.enable(false)
+  rebuildTrackedObjectMenu()
 
   // (Fudge slider and mode menu removed)
 
@@ -1248,11 +1457,13 @@ void main (void)
         viewer.objectPickListener(res.sat, viewer.lastPicked);
         viewer.lastPicked = res.sat;
         viewer.pickedObject = res.sat;
+        setTrackedObjectMenuSelection(res.sat);
         ev.preventDefault();
         ev.stopPropagation();
         ev.stopImmediatePropagation?.();
       } else {
         viewer.pickedObject = undefined;
+        setTrackedObjectMenuSelection(undefined);
       }
       // else: let clicks continue to underlying widgets
     }

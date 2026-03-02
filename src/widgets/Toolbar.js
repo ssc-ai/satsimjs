@@ -85,6 +85,94 @@ Toolbar.prototype.addToolbarButton = function (text, onclick) {
 }
 
 /**
+ * Adds an input field to the toolbar.
+ *
+ * @param {string} placeholder The placeholder text.
+ * @param {Function} [oninput] Optional input-change callback.
+ * @returns {HTMLInputElement} The input element.
+ */
+Toolbar.prototype.addToolbarInput = function (placeholder, oninput) {
+  const input = document.createElement("input");
+  input.type = "text";
+  input.className = "cesium-button";
+  input.placeholder = placeholder ?? "";
+  if (typeof oninput === "function") {
+    input.addEventListener("input", function () {
+      oninput(input.value);
+    });
+  }
+  input.enable = function(value) {
+    input.disabled = !value;
+  }
+  this._container.appendChild(input);
+  return input;
+}
+
+/**
+ * Adds a combined input + dropdown menu control.
+ *
+ * @param {string} placeholder Placeholder text for the input.
+ * @returns {{container: HTMLDivElement, input: HTMLInputElement, menu: HTMLSelectElement, enable: Function, showMenu: Function, hideMenu: Function}}
+ */
+Toolbar.prototype.addToolbarComboMenu = function (placeholder) {
+  const container = document.createElement("div");
+  container.style.position = "relative";
+  container.style.display = "inline-block";
+  container.style.verticalAlign = "top";
+
+  const input = document.createElement("input");
+  input.type = "text";
+  input.className = "cesium-button";
+  input.placeholder = placeholder ?? "";
+  input.autocomplete = "off";
+  input.style.minWidth = "180px";
+  container.appendChild(input);
+
+  const menu = document.createElement("select");
+  menu.className = "cesium-button";
+  menu.userOptions = [];
+  menu.size = 6;
+  menu.style.position = "absolute";
+  menu.style.left = "0";
+  menu.style.top = "calc(100% + 2px)";
+  menu.style.minWidth = "100%";
+  menu.style.zIndex = "1000";
+  menu.style.display = "none";
+  menu.onchange = function () {
+    const item = menu.userOptions[menu.selectedIndex];
+    if (item && typeof item.onselect === "function") {
+      item.onselect();
+    }
+  };
+  container.appendChild(menu);
+
+  const combo = {
+    container,
+    input,
+    menu,
+    enable: function(value) {
+      const enabled = !!value;
+      input.disabled = !enabled;
+      menu.disabled = !enabled;
+      if (!enabled) {
+        menu.style.display = "none";
+      }
+    },
+    showMenu: function() {
+      if (!menu.disabled) {
+        menu.style.display = "block";
+      }
+    },
+    hideMenu: function() {
+      menu.style.display = "none";
+    }
+  };
+
+  this._container.appendChild(container);
+  return combo;
+}
+
+/**
  * Adds a menu to the toolbar.
  *
  * @param {Object[]} options The menu options.
