@@ -87,6 +87,20 @@ describe('Gimbal', () => {
       gimbal._range = 54321;
       expect(gimbal.range).toBe(54321);
     });
+
+    it('should use configurable maxRange when not tracking', () => {
+      gimbal.maxRange = 12000;
+      gimbal._trackMode = 'fixed';
+      expect(gimbal.range).toBe(12000);
+    });
+
+    it('should ignore invalid maxRange values', () => {
+      gimbal.maxRange = 12000;
+      gimbal.maxRange = -1;
+      gimbal.maxRange = NaN;
+      gimbal.maxRange = 0;
+      expect(gimbal.maxRange).toBe(12000);
+    });
   });
 
   describe('trackMode getter and setter', () => {
@@ -156,6 +170,47 @@ describe('Gimbal', () => {
       expect(gimbal.trackObject).toBe(mockTrackObject);
     });
   });
+
+  describe('axis slew helpers', () => {
+    test('setAxisSlewRates stores normalized per-axis configuration', () => {
+      gimbal.setAxisSlewRates({
+        az: { max_rate: 8, max_accel: 24 },
+        el: 6,
+        invalid: -1
+      })
+
+      const rates = gimbal.getAxisSlewRates()
+      expect(rates.az.maxRateDegPerSec).toBeCloseTo(8, 8)
+      expect(rates.az.maxAccelDegPerSec2).toBeCloseTo(24, 8)
+      expect(rates.el.maxRateDegPerSec).toBeCloseTo(6, 8)
+      expect(rates.invalid).toBeUndefined()
+    })
+
+    test('stepAxisTarget accumulates against existing target', () => {
+      gimbal.setAxisTarget('az', 10)
+      gimbal.stepAxisTarget('az', 5, 0)
+      gimbal.stepAxisTarget('az', -2, 0)
+      expect(gimbal.getAxisTarget('az')).toBeCloseTo(13, 8)
+    })
+
+    test('_slewAxis jumps instantly when no slew rates configured', () => {
+      const next = gimbal._slewAxis('az', 0, 30, 0.5)
+      expect(next).toBeCloseTo(30, 8)
+    })
+
+    test('_slewAxis converges to target with finite slew rate', () => {
+      gimbal.setAxisSlewRates({
+        az: { maxRateDegPerSec: 10, maxAccelDegPerSec2: 20 }
+      })
+
+      let value = 0
+      for (let i = 0; i < 8; i++) {
+        value = gimbal._slewAxis('az', value, 60, 1.0)
+      }
+
+      expect(value).toBeCloseTo(60, 3)
+    })
+  })
 
   describe('update method', () => {
     it('should call super.update with correct parameters', () => {

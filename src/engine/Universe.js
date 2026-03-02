@@ -10,7 +10,6 @@ import AirVehicle from "./objects/AirVehicle.js";
 import SimObject from "./objects/SimObject.js";
 import Observatory from "./objects/Observatory.js";
 import { Cartesian3, JulianDate, defined } from "cesium";
-import Gimbal from "./objects/Gimbal.js";
 import EventQueue from "./event/EventQueue.js";
 
 function numberOr(value, fallback = 0) {
@@ -95,6 +94,16 @@ function resolveAirVehicleForEvent(universe, ev) {
   return undefined
 }
 
+function findObservatoryByName(universe, observerName) {
+  if (!defined(observerName)) return undefined
+  const arr = universe?._observatories || []
+  for (let i = 0; i < arr.length; i++) {
+    const obs = arr[i]
+    if (obs?.site?.name === observerName) return obs
+  }
+  return undefined
+}
+
 /**
  * Represents a universe containing ECI objects, ground stations, sensors, and gimbals.
  */
@@ -166,19 +175,106 @@ class Universe {
       const targetName = ev?.data?.target ?? ev?.target
       if (!observerName) return
       const target = (targetName !== null && targetName !== undefined) ? (universe.getObject && universe.getObject(targetName)) : undefined
-      const arr = universe._observatories || []
-      for (let i = 0; i < arr.length; i++) {
-        const o = arr[i]
-        if (o?.site?.name === observerName && o?.gimbal) {
-          if (targetProvided && (targetName === null || targetName === undefined)) {
-            o.gimbal.trackObject = null
-          } else if (target) {
-            o.gimbal.trackMode = 'rate'
-            o.gimbal.trackObject = target
+      const obs = findObservatoryByName(universe, observerName)
+      if (obs?.gimbal) {
+        if (targetProvided && (targetName === null || targetName === undefined)) {
+          obs.gimbal.trackObject = null
+          obs.gimbal.trackMode = 'fixed'
+          if (typeof obs.gimbal.clearAxisTargets === 'function') {
+            obs.gimbal.clearAxisTargets(true)
           }
-          break
+        } else if (target) {
+          obs.gimbal.trackMode = 'rate'
+          obs.gimbal.trackObject = target
         }
       }
+    })
+
+    this._events.registerHandler('stepGimbalAxes', (universe, ev) => {
+      const data = ev?.data ?? {}
+      const observerName = data.observer ?? ev?.observer
+      if (!observerName) return
+
+      const obs = findObservatoryByName(universe, observerName)
+      if (!obs?.gimbal) return
+      const gimbal = obs.gimbal
+      const wasTracking = (gimbal.trackMode === 'rate') || defined(gimbal.trackObject)
+      gimbal.trackObject = null
+      gimbal.trackMode = 'fixed'
+      if (wasTracking && typeof gimbal.clearAxisTargets === 'function') {
+        gimbal.clearAxisTargets(true)
+      }
+
+      const deltas = {}
+      const axisObj = data.axes ?? data.deltas ?? ev?.axes ?? ev?.deltas
+      if (defined(axisObj) && typeof axisObj === 'object') {
+        Object.keys(axisObj).forEach((axisName) => {
+          deltas[axisName] = axisObj[axisName]
+        })
+      }
+      if (Object.prototype.hasOwnProperty.call(data, 'delta_az_deg') || Object.prototype.hasOwnProperty.call(data, 'deltaAzDeg')) {
+        deltas.az = data.delta_az_deg ?? data.deltaAzDeg
+      }
+      if (Object.prototype.hasOwnProperty.call(data, 'delta_el_deg') || Object.prototype.hasOwnProperty.call(data, 'deltaElDeg')) {
+        deltas.el = data.delta_el_deg ?? data.deltaElDeg
+      }
+      if (Object.prototype.hasOwnProperty.call(data, 'delta_roll_deg') || Object.prototype.hasOwnProperty.call(data, 'deltaRollDeg')) {
+        deltas.roll = data.delta_roll_deg ?? data.deltaRollDeg
+      }
+
+      Object.keys(deltas).forEach((axisName) => {
+        const axis = String(axisName)
+        const deltaDeg = Number(deltas[axisName])
+        if (!Number.isFinite(deltaDeg) || deltaDeg === 0) return
+        const currentDeg = numberOr(gimbal[axis], 0)
+        const normalizeTargetDeg = (axis.toLowerCase() === 'az')
+          ? (azDeg) => {
+            let wrapped = Number(azDeg) % 360.0
+            if (wrapped < 0) wrapped += 360.0
+            return wrapped
+          }
+          : undefined
+
+        if (typeof gimbal.stepAxisTarget === 'function') {
+          gimbal.stepAxisTarget(axis, deltaDeg, currentDeg, { normalizeTargetDeg })
+        } else if (Object.prototype.hasOwnProperty.call(gimbal, axis)) {
+          gimbal[axis] = currentDeg + deltaDeg
+        }
+      })
+    })
+
+    this._events.registerHandler('setGimbalAxes', (universe, ev) => {
+      const data = ev?.data ?? {}
+      const observerName = data.observer ?? ev?.observer
+      if (!observerName) return
+
+      const obs = findObservatoryByName(universe, observerName)
+      if (!obs?.gimbal) return
+      const gimbal = obs.gimbal
+      gimbal.trackObject = null
+      gimbal.trackMode = 'fixed'
+
+      const axisObj = data.axes ?? ev?.axes
+      if (!defined(axisObj) || typeof axisObj !== 'object') return
+
+      Object.keys(axisObj).forEach((axisName) => {
+        const axis = String(axisName)
+        const targetDeg = Number(axisObj[axisName])
+        if (!Number.isFinite(targetDeg)) return
+        const normalizeTargetDeg = (axis.toLowerCase() === 'az')
+          ? (azDeg) => {
+            let wrapped = Number(azDeg) % 360.0
+            if (wrapped < 0) wrapped += 360.0
+            return wrapped
+          }
+          : undefined
+
+        if (typeof gimbal.setAxisTarget === 'function') {
+          gimbal.setAxisTarget(axis, targetDeg, { normalizeTargetDeg })
+        } else if (Object.prototype.hasOwnProperty.call(gimbal, axis)) {
+          gimbal[axis] = targetDeg
+        }
+      })
     })
 
     const applyAirVehicleManeuver = (universe, ev) => {
@@ -397,17 +493,27 @@ class Universe {
    * @param {number} y_fov - The vertical field of view of the sensor in degrees.
    * @param {number} x_fov - The horizontal field of view of the sensor in degrees.
    * @param {Array<number>} field_of_regard - The field of regard of the sensor.
+   * @param {Object<string, number|Object>} [gimbalSlewRates] - Optional per-axis slew settings.
+   * @param {number} [sensorMaxDistance] - Optional fallback max sensor/gimbal range in meters when idle.
    * @returns {{site: EarthGroundStation, gimbal: AzElGimbal, sensor: ElectroOpicalSensor}} - The added observatory.
    */
-  addGroundElectroOpticalObservatory(name, latitude, longitude, altitude, gimbalType, height, width, y_fov, x_fov, field_of_regard) {
+  addGroundElectroOpticalObservatory(name, latitude, longitude, altitude, gimbalType, height, width, y_fov, x_fov, field_of_regard, gimbalSlewRates = undefined, sensorMaxDistance = undefined) {
     const site = new EarthGroundStation(latitude, longitude, altitude, name)
     site.attach(this.earth)
 
     const gimbal = new AzElGimbal(name + ' Gimbal')
+    const maxRangeMeters = Number(sensorMaxDistance)
+    if (Number.isFinite(maxRangeMeters) && maxRangeMeters > 0) {
+      gimbal.maxRange = maxRangeMeters
+    }
+    if (defined(gimbalSlewRates) && typeof gimbal.setAxisSlewRates === 'function') {
+      gimbal.setAxisSlewRates(gimbalSlewRates)
+    }
     gimbal.attach(site)
     this.addObject(gimbal, false)
 
     const sensor = new ElectroOpicalSensor(height, width, y_fov, x_fov, field_of_regard, name + ' Sensor')
+    sensor.maxRange = gimbal.maxRange
     sensor.attach(gimbal)
     this.addObject(sensor, false)
 

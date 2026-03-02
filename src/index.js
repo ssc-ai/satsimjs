@@ -34,6 +34,7 @@ export { createViewer, mixinViewer } from './widgets/Viewer.js'
 
 export { fetchTle, parseTle } from './io/tle.js'
 export { southEastZenithToAzEl, spaceBasedToAzEl } from './engine/dynamics/gimbal.js'
+export { normalizeAxisSlewConfig, stepSlewAxis } from './engine/dynamics/slew.js'
 export { getVisibility } from './engine/geometry/visibility.js'
 export { getShadowStatus, ShadowState } from './engine/geometry/shadow.js'
 

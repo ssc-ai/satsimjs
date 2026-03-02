@@ -177,6 +177,26 @@ describe('AzElGimbal', () => {
       
       expect(azElGimbal._trackToLocalVector).toHaveBeenCalledWith(anotherTime, anotherUniverse);
     });
+
+    it('should slew toward target when per-axis slew rates are configured', () => {
+      azElGimbal.setAxisSlewRates({
+        az: { maxRateDegPerSec: 10, maxAccelDegPerSec2: 20 },
+        el: { maxRateDegPerSec: 10, maxAccelDegPerSec2: 20 }
+      });
+      azElGimbal.az = 0;
+      azElGimbal.el = 90;
+      azElGimbal._trackToLocalVector.mockReturnValue(new Cartesian3(1, 2, 3));
+      southEastZenithToAzEl.mockReturnValue([90.0, 10.0, 1000.0]);
+
+      azElGimbal._update(testTime, mockUniverse);
+      const t2 = JulianDate.addSeconds(testTime, 1, new JulianDate());
+      azElGimbal._update(t2, mockUniverse);
+
+      expect(azElGimbal.az).toBeGreaterThan(0);
+      expect(azElGimbal.az).toBeLessThan(90);
+      expect(azElGimbal.el).toBeLessThan(90);
+      expect(azElGimbal.el).toBeGreaterThan(10);
+    });
   });
 
   describe('inheritance from Gimbal', () => {

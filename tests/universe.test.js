@@ -587,7 +587,8 @@ describe('Universe', () => {
       mockGimbal = {
         name: 'ObservatoryGimbal', // Updated to match expected naming
         attach: jest.fn(),
-        update: jest.fn()
+        update: jest.fn(),
+        setAxisSlewRates: jest.fn()
       };
       
       mockSensor = {
@@ -661,6 +662,30 @@ describe('Universe', () => {
       expect(ElectroOpicalSensor).toHaveBeenCalledWith(
         4096, 4096, 0.5, 0.5, [], 'HighRes Sensor'
       );
+    });
+
+    test('should pass optional gimbal slew rates to gimbal when provided', () => {
+      const slewRates = {
+        az: { maxRateDegPerSec: 10, maxAccelDegPerSec2: 30 },
+        el: { maxRateDegPerSec: 7 }
+      }
+
+      universe.addGroundElectroOpticalObservatory(
+        'SlewObs', 40.7, -74.0, 100, 'azEl',
+        1024, 768, 1.0, 1.5, [], slewRates
+      )
+
+      expect(mockGimbal.setAxisSlewRates).toHaveBeenCalledWith(slewRates)
+    });
+
+    test('should apply optional sensor max distance to gimbal and sensor', () => {
+      universe.addGroundElectroOpticalObservatory(
+        'RangeObs', 40.7, -74.0, 100, 'azEl',
+        1024, 768, 1.0, 1.5, [], undefined, 9000
+      )
+
+      expect(universe.gimbals[0].maxRange).toBe(9000)
+      expect(universe.sensors[0].maxRange).toBe(9000)
     });
 
     test('should handle different geographical locations', () => {

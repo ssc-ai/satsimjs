@@ -71,6 +71,75 @@ function numberOr(value, fallback = 0) {
   return Number.isFinite(num) ? num : fallback
 }
 
+function resolveGimbalAxisSlewRate(entry) {
+  let maxRateDegPerSec
+  let maxAccelDegPerSec2
+
+  if (typeof entry === 'number' || typeof entry === 'string') {
+    maxRateDegPerSec = Number(entry)
+  } else if (defined(entry) && typeof entry === 'object') {
+    maxRateDegPerSec = Number(
+      entry.max_rate ??
+      entry.maxRate ??
+      entry.maxRateDegPerSec ??
+      entry.max_rate_deg_per_sec ??
+      entry.max_rate_deg_s ??
+      entry.rate ??
+      entry.slew_rate_deg_per_sec
+    )
+    maxAccelDegPerSec2 = Number(
+      entry.max_accel ??
+      entry.maxAccel ??
+      entry.maxAccelDegPerSec2 ??
+      entry.max_accel_deg_per_sec2 ??
+      entry.max_accel_deg_s2 ??
+      entry.accel ??
+      entry.acceleration_deg_per_sec2
+    )
+  }
+
+  if (!(Number.isFinite(maxRateDegPerSec) && maxRateDegPerSec > 0)) {
+    return undefined
+  }
+
+  const out = { maxRateDegPerSec }
+  if (Number.isFinite(maxAccelDegPerSec2) && maxAccelDegPerSec2 > 0) {
+    out.maxAccelDegPerSec2 = maxAccelDegPerSec2
+  }
+  return out
+}
+
+function resolveGimbalSlewRates(input) {
+  if (!defined(input) || typeof input !== 'object' || Array.isArray(input)) {
+    return undefined
+  }
+  const out = {}
+  Object.keys(input).forEach((axisName) => {
+    const axis = String(axisName).trim()
+    if (!axis) return
+    const axisRate = resolveGimbalAxisSlewRate(input[axisName])
+    if (axisRate) {
+      out[axis] = axisRate
+    }
+  })
+  return Object.keys(out).length > 0 ? out : undefined
+}
+
+function resolveSensorMaxDistance(input) {
+  const meters = Number(
+    input.sensor_max_distance ??
+    input.sensorMaxDistance ??
+    input.max_sensor_distance ??
+    input.maxSensorDistance ??
+    input.max_distance ??
+    input.maxDistance ??
+    input.sensor_range ??
+    input.sensorRange ??
+    input.range
+  )
+  return (Number.isFinite(meters) && meters > 0) ? meters : undefined
+}
+
 function resolveVector3(value, fallback = [0, 0, 0]) {
   if (value instanceof Cartesian3) {
     return Cartesian3.clone(value)
@@ -253,6 +322,8 @@ function createAirVehicleModelOrientationProperty(vehicle, universe, headingOffs
  * @param {number|string} [obs.y_fov=5] - Sensor FOV in Y (deg).
  * @param {number|string} [obs.x_fov=5] - Sensor FOV in X (deg).
  * @param {Array} [obs.field_of_regard=[]] - Optional field of regard.
+ * @param {Object<string, number|Object>} [obs.gimbal_slew_rates] - Optional per-axis slew settings.
+ * @param {number|string} [obs.sensor_max_distance] - Optional fallback sensor range in meters when idle.
  * @param {string|Object} [obs.model] - Optional 3D model URI or Cesium model options.
  */
 export function addObservatory(universe, viewer, obs) {
@@ -271,7 +342,14 @@ export function addObservatory(universe, viewer, obs) {
     Number(obs.width),
     Number(obs.y_fov ?? 5),
     Number(obs.x_fov ?? 5),
-    obs.field_of_regard ?? []
+    obs.field_of_regard ?? [],
+    resolveGimbalSlewRates(
+      obs.gimbal_slew_rates ??
+      obs.gimbalSlewRates ??
+      obs.slew_rates ??
+      obs.slewRates
+    ),
+    resolveSensorMaxDistance(obs)
   )
 
   const desc = `<div><b>${obs.name}</b><br>` +
@@ -602,6 +680,12 @@ export function addScenarioObject(universe, viewer, obj) {
         y_fov: obj.y_fov,
         x_fov: obj.x_fov,
         field_of_regard: obj.field_of_regard,
+        gimbal_slew_rates: (obj.gimbal_slew_rates != null ? obj.gimbal_slew_rates : obj.gimbalSlewRates),
+        sensor_max_distance: (
+          obj.sensor_max_distance != null
+            ? obj.sensor_max_distance
+            : (obj.sensorMaxDistance != null ? obj.sensorMaxDistance : obj.max_sensor_distance)
+        ),
         model: obj.model,
       })
       break
@@ -660,6 +744,10 @@ export function addScenarioObject(universe, viewer, obj) {
  * Currently supports:
  * - type: 'trackObject' with {observer, target} fields
  *   Switches the observer's gimbal to rate tracking of the target at event time.
+ * - type: 'stepGimbalAxes' with {observer, axes:{axisName:deltaDeg}}
+ *   Steps one or more gimbal axis targets by delta degrees.
+ * - type: 'setGimbalAxes' with {observer, axes:{axisName:targetDeg}}
+ *   Sets one or more gimbal axis targets in degrees.
  *
  * @param {Universe} universe - The SatSim Universe instance.
  * @param {Viewer} viewer - The SatSim viewer.

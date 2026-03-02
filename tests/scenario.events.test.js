@@ -72,6 +72,35 @@ describe('Scenario event scheduling', () => {
 
     universe.update(start)
     expect(gimbal.trackObject).toBeNull()
+    expect(gimbal.trackMode).toBe('fixed')
+  })
+
+  test('stepGimbalAxes event steps axis values in fixed mode', () => {
+    const gimbal = {
+      trackMode: 'rate',
+      trackObject: { name: 'SAT' },
+      az: 10,
+      el: 20,
+      update: jest.fn()
+    }
+    const site = { name: 'OBS', update: jest.fn() }
+    const sensor = { update: jest.fn() }
+    universe._observatories.push({ site, gimbal, sensor })
+
+    scheduleScenarioEvents(universe, viewer, [
+      {
+        time: 0,
+        type: 'stepGimbalAxes',
+        observer: 'OBS',
+        axes: { az: 5, el: -3 }
+      }
+    ])
+
+    universe.update(start)
+    expect(gimbal.trackMode).toBe('fixed')
+    expect(gimbal.trackObject).toBeNull()
+    expect(gimbal.az).toBeCloseTo(15, 8)
+    expect(gimbal.el).toBeCloseTo(17, 8)
   })
 
   test('loadScenario adds events without clearing existing ones', () => {

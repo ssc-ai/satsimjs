@@ -90,4 +90,48 @@ describe('scenario observatory model support', () => {
     expect(viewer.addObservatoryVisualizer).toHaveBeenCalledTimes(1)
     expect(viewer.addObservatoryVisualizer.mock.calls[0][2]).toBeUndefined()
   })
+
+  test('forwards gimbal_slew_rates into observatory creation', () => {
+    addScenarioObject(universe, viewer, {
+      type: 'GroundEOObservatory',
+      name: 'HSV Laser Test Range',
+      latitude: 34.6707,
+      longitude: -86.6508,
+      altitude: 5,
+      height: 2048,
+      width: 2048,
+      y_fov: 1,
+      x_fov: 1,
+      gimbal_slew_rates: {
+        az: { max_rate: 8, max_accel: 24 },
+        el: 6
+      }
+    })
+
+    expect(universe.addGroundElectroOpticalObservatory).toHaveBeenCalledTimes(1)
+    const args = universe.addGroundElectroOpticalObservatory.mock.calls[0]
+    expect(args[10]).toEqual({
+      az: { maxRateDegPerSec: 8, maxAccelDegPerSec2: 24 },
+      el: { maxRateDegPerSec: 6 }
+    })
+  })
+
+  test('forwards sensor_max_distance into observatory creation', () => {
+    addScenarioObject(universe, viewer, {
+      type: 'GroundEOObservatory',
+      name: 'HSV Laser Test Range',
+      latitude: 34.6707,
+      longitude: -86.6508,
+      altitude: 5,
+      height: 2048,
+      width: 2048,
+      y_fov: 1,
+      x_fov: 1,
+      sensor_max_distance: 7500
+    })
+
+    expect(universe.addGroundElectroOpticalObservatory).toHaveBeenCalledTimes(1)
+    const args = universe.addGroundElectroOpticalObservatory.mock.calls[0]
+    expect(args[11]).toBe(7500)
+  })
 })

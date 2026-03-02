@@ -1,6 +1,19 @@
 import Gimbal from './Gimbal.js';
 import { southEastZenithToAzEl } from '../dynamics/gimbal.js';
-import { Math as CMath, JulianDate } from 'cesium';
+import { Math as CMath } from 'cesium';
+
+function normalizeAzimuthDeg(azDeg) {
+  let wrapped = Number(azDeg) % 360.0
+  if (wrapped < 0) wrapped += 360.0
+  return wrapped
+}
+
+function shortestAzimuthErrorDeg(targetAzDeg, currentAzDeg) {
+  let err = normalizeAzimuthDeg(targetAzDeg) - normalizeAzimuthDeg(currentAzDeg)
+  if (err > 180.0) err -= 360.0
+  if (err < -180.0) err += 360.0
+  return err
+}
 
 /**
  * Represents an Azimuth-Elevation Gimbal object that extends the Gimbal class.
@@ -24,9 +37,25 @@ class AzElGimbal extends Gimbal {
    * @override
    */
   _update(time, universe) {
+    let targetAz = this.getAxisTarget('az')
+    let targetEl = this.getAxisTarget('el')
+    if (!Number.isFinite(targetAz)) targetAz = this.az
+    if (!Number.isFinite(targetEl)) targetEl = this.el
+
     const localVector = this._trackToLocalVector(time, universe)
-    if (localVector !== null)
-      [this.az, this.el, this._range] = southEastZenithToAzEl(localVector)
+    if (localVector !== null) {
+      [targetAz, targetEl, this._range] = southEastZenithToAzEl(localVector)
+    }
+
+    const dtSec = this._consumeSlewDeltaTime(time)
+    this.az = this._slewAxis('az', this.az, targetAz, dtSec, {
+      computeErrorDeg: shortestAzimuthErrorDeg,
+      normalizePositionDeg: normalizeAzimuthDeg,
+      normalizeTargetDeg: normalizeAzimuthDeg
+    })
+    this.el = this._slewAxis('el', this.el, targetEl, dtSec, {
+      computeErrorDeg: (targetDeg, currentDeg) => targetDeg - currentDeg
+    })
 
     // setup reference transform
     this.reset()

@@ -19,7 +19,12 @@ class SensorFieldOfRegardVisualizer extends CompountElementVisualizer {
     }
 
     function createFieldOfRegardSections(minClock, maxClock, minEl, maxEl, range) {
-      if (range === undefined) range = 45000000.0;
+      if (range === undefined) {
+        const configuredRange = Number(sensor.maxRange)
+        range = (Number.isFinite(configuredRange) && configuredRange > 0)
+          ? configuredRange
+          : 45000000.0
+      }
 
       const epsDeg = 0.1; // minimum angular width to avoid degeneracy (~0.0017 rad)
 
