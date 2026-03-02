@@ -189,13 +189,37 @@ function resolveAccelerationNed(entry) {
   return new Cartesian3()
 }
 
+function resolveModelOffset(value) {
+  if (!defined(value)) {
+    return new Cartesian3()
+  }
+
+  if (value instanceof Cartesian3) {
+    return Cartesian3.clone(value)
+  }
+
+  if (Array.isArray(value) && value.length >= 3) {
+    return new Cartesian3(numberOr(value[0]), numberOr(value[1]), numberOr(value[2]))
+  }
+
+  if (typeof value === 'object') {
+    return new Cartesian3(numberOr(value.x), numberOr(value.y), numberOr(value.z))
+  }
+
+  return new Cartesian3()
+}
+
+function isNonZeroVector3(v) {
+  return defined(v) && (v.x !== 0 || v.y !== 0 || v.z !== 0)
+}
+
 function resolveScenarioModel(input) {
   const fallback = {
     modelGraphics: undefined,
-    headingOffsetDeg: 0,
-    pitchOffsetDeg: 0,
-    rollOffsetDeg: 0,
-    verticalOffsetMeters: 0
+    headingOffset: 0,
+    pitchOffset: 0,
+    rollOffset: 0,
+    modelOffset: new Cartesian3()
   }
   if (!defined(input)) {
     return fallback
@@ -212,10 +236,10 @@ function resolveScenarioModel(input) {
         minimumPixelSize: DEFAULT_MODEL_MINIMUM_PIXEL_SIZE,
         maximumScale: DEFAULT_MODEL_MAXIMUM_SCALE
       },
-      headingOffsetDeg: 0,
-      pitchOffsetDeg: 0,
-      rollOffsetDeg: 0,
-      verticalOffsetMeters: 0
+      headingOffset: 0,
+      pitchOffset: 0,
+      rollOffset: 0,
+      modelOffset: new Cartesian3()
     }
   }
 
@@ -224,53 +248,55 @@ function resolveScenarioModel(input) {
   }
 
   const modelGraphics = { ...input }
-  const uriInput = modelGraphics.uri ?? modelGraphics.url ?? modelGraphics.path
+  const uriInput = modelGraphics.uri
   const uri = defined(uriInput) ? String(uriInput).trim() : ''
   if (!uri) {
     return fallback
   }
   modelGraphics.uri = uri
-  delete modelGraphics.url
-  delete modelGraphics.path
 
-  const headingOffsetDeg = numberOr(modelGraphics.headingOffsetDeg ?? modelGraphics.heading_offset_deg)
-  const pitchOffsetDeg = numberOr(modelGraphics.pitchOffsetDeg ?? modelGraphics.pitch_offset_deg)
-  const rollOffsetDeg = numberOr(modelGraphics.rollOffsetDeg ?? modelGraphics.roll_offset_deg)
-  const verticalOffsetMeters = numberOr(
-    modelGraphics.verticalOffsetMeters ??
-    modelGraphics.vertical_offset_m ??
-    modelGraphics.modelVerticalOffsetMeters
+  const headingOffset = numberOr(modelGraphics.heading_offset)
+  const pitchOffset = numberOr(modelGraphics.pitch_offset)
+  const rollOffset = numberOr(modelGraphics.roll_offset)
+  const modelOffset = resolveModelOffset(modelGraphics.offset)
+
+  const minPixSize = numberOr(
+    modelGraphics.min_pix_size,
+    DEFAULT_MODEL_MINIMUM_PIXEL_SIZE
   )
-  delete modelGraphics.headingOffsetDeg
-  delete modelGraphics.heading_offset_deg
-  delete modelGraphics.pitchOffsetDeg
-  delete modelGraphics.pitch_offset_deg
-  delete modelGraphics.rollOffsetDeg
-  delete modelGraphics.roll_offset_deg
-  delete modelGraphics.verticalOffsetMeters
-  delete modelGraphics.vertical_offset_m
-  delete modelGraphics.modelVerticalOffsetMeters
+  const maxScale = numberOr(
+    modelGraphics.max_scale,
+    DEFAULT_MODEL_MAXIMUM_SCALE
+  )
 
-  modelGraphics.minimumPixelSize = numberOr(modelGraphics.minimumPixelSize, DEFAULT_MODEL_MINIMUM_PIXEL_SIZE)
-  modelGraphics.maximumScale = numberOr(modelGraphics.maximumScale, DEFAULT_MODEL_MAXIMUM_SCALE)
+  modelGraphics.minimumPixelSize = minPixSize
+  modelGraphics.maximumScale = maxScale
 
-  return { modelGraphics, headingOffsetDeg, pitchOffsetDeg, rollOffsetDeg, verticalOffsetMeters }
+  delete modelGraphics.min_pix_size
+  delete modelGraphics.max_scale
+
+  delete modelGraphics.heading_offset
+  delete modelGraphics.pitch_offset
+  delete modelGraphics.roll_offset
+  delete modelGraphics.offset
+
+  return { modelGraphics, headingOffset, pitchOffset, rollOffset, modelOffset }
 }
 
-function resolveScenarioModelVisualizerOptions(input, includeVerticalOffset = false) {
+function resolveScenarioModelVisualizerOptions(input) {
   const resolved = resolveScenarioModel(input)
   if (!defined(resolved.modelGraphics)) {
     return { ...resolved, visualizerModelOptions: undefined }
   }
 
   const visualizerModelOptions = { model: resolved.modelGraphics }
-  if (includeVerticalOffset && resolved.verticalOffsetMeters !== 0) {
-    visualizerModelOptions.modelVerticalOffsetMeters = resolved.verticalOffsetMeters
+  if (isNonZeroVector3(resolved.modelOffset)) {
+    visualizerModelOptions.offset = Cartesian3.clone(resolved.modelOffset)
   }
   return { ...resolved, visualizerModelOptions }
 }
 
-function createAirVehicleModelOrientationProperty(vehicle, universe, headingOffsetDeg = 0, pitchOffsetDeg = 0, rollOffsetDeg = 0) {
+function createAirVehicleModelOrientationProperty(vehicle, universe, headingOffset = 0, pitchOffset = 0, rollOffset = 0) {
   return new CallbackProperty((time, result) => {
     vehicle.update(time, universe)
     const position = vehicle.position
@@ -280,7 +306,7 @@ function createAirVehicleModelOrientationProperty(vehicle, universe, headingOffs
 
     // Vehicle heading is defined clockwise from north. Build a right-handed
     // body frame in ENU where +X is forward, +Y is left, and +Z is up.
-    const headingRad = numberOr(vehicle.heading + headingOffsetDeg) * Math.PI / 180
+    const headingRad = numberOr(vehicle.heading + headingOffset) * Math.PI / 180
     const sinHeading = Math.sin(headingRad)
     const cosHeading = Math.cos(headingRad)
     _scratchBodyToEnuRotation[0] = sinHeading
@@ -293,8 +319,8 @@ function createAirVehicleModelOrientationProperty(vehicle, universe, headingOffs
     _scratchBodyToEnuRotation[7] = 0
     _scratchBodyToEnuRotation[8] = 1
 
-    const pitchOffsetRad = numberOr(pitchOffsetDeg) * Math.PI / 180
-    const rollOffsetRad = numberOr(rollOffsetDeg) * Math.PI / 180
+    const pitchOffsetRad = numberOr(pitchOffset) * Math.PI / 180
+    const rollOffsetRad = numberOr(rollOffset) * Math.PI / 180
     Matrix3.fromRotationY(pitchOffsetRad, _scratchRotY)
     Matrix3.fromRotationX(rollOffsetRad, _scratchRotX)
     Matrix3.multiply(_scratchRotY, _scratchRotX, _scratchBodyOffsetRotation)
@@ -357,7 +383,7 @@ export function addObservatory(universe, viewer, obs) {
     `Longitude: ${obs.longitude} deg<br>` +
     `Altitude: ${obs.altitude ?? 0} m</div>`
 
-  const { visualizerModelOptions } = resolveScenarioModelVisualizerOptions(obs.model, true)
+  const { visualizerModelOptions } = resolveScenarioModelVisualizerOptions(obs.model)
   viewer.addObservatoryVisualizer(o, desc, visualizerModelOptions)
 }
 
@@ -454,9 +480,9 @@ export function addAirVehicle(universe, viewer, entry, idx = 0) {
   const epoch = entry.epoch ? JulianDate.fromDate(new Date(entry.epoch)) : viewer.clock.currentTime.clone()
   const {
     modelGraphics,
-    headingOffsetDeg,
-    pitchOffsetDeg,
-    rollOffsetDeg,
+    headingOffset,
+    pitchOffset,
+    rollOffset,
     visualizerModelOptions
   } = resolveScenarioModelVisualizerOptions(entry.model)
 
@@ -486,7 +512,7 @@ export function addAirVehicle(universe, viewer, entry, idx = 0) {
     ...(visualizerModelOptions ?? {})
   }
   if (defined(modelGraphics)) {
-    visualizerOptions.orientation = createAirVehicleModelOrientationProperty(v, universe, headingOffsetDeg, pitchOffsetDeg, rollOffsetDeg)
+    visualizerOptions.orientation = createAirVehicleModelOrientationProperty(v, universe, headingOffset, pitchOffset, rollOffset)
   }
   viewer.addObjectVisualizer(v, desc, visualizerOptions)
 }

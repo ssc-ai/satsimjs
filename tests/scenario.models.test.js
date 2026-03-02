@@ -49,25 +49,28 @@ describe('scenario generic model support', () => {
     expect(options.model.maximumScale).toBe(20000)
   })
 
-  test('applies model aliases to SGP4 satellites', () => {
+  test('applies canonical model keys to SGP4 satellites', () => {
     addScenarioObject(universe, viewer, {
       type: 'SGP4Satellite',
       name: 'SGP4-Model',
       tle1: '1 00005U 58002B   00179.78495062  .00000023  00000-0  28098-4 0  4753',
       tle2: '2 00005  34.2682 348.7242 1849677 331.7664  19.3264 10.82419157413667',
       model: {
-        path: './Sgp4Sat.glb',
+        uri: './Sgp4Sat.glb',
         scale: 1.2,
+        min_pix_size: 40,
+        max_scale: 25000
       },
     })
 
     expect(viewer.addObjectVisualizer).toHaveBeenCalledTimes(1)
     const options = viewer.addObjectVisualizer.mock.calls[0][2]
     expect(options.model.uri).toBe('./Sgp4Sat.glb')
-    expect(options.model.path).toBeUndefined()
     expect(options.model.scale).toBeCloseTo(1.2, 8)
-    expect(options.model.minimumPixelSize).toBe(64)
-    expect(options.model.maximumScale).toBe(20000)
+    expect(options.model.min_pix_size).toBeUndefined()
+    expect(options.model.max_scale).toBeUndefined()
+    expect(options.model.minimumPixelSize).toBe(40)
+    expect(options.model.maximumScale).toBe(25000)
   })
 
   test('applies catalog-level model to TLE catalog entries', () => {
@@ -87,5 +90,21 @@ describe('scenario generic model support', () => {
     expect(options.model.uri).toBe('./CatalogSat.glb')
     expect(options.model.minimumPixelSize).toBe(64)
     expect(options.model.maximumScale).toBe(20000)
+  })
+
+  test('requires model.uri for object model definitions', () => {
+    addScenarioObject(universe, viewer, {
+      type: 'SGP4Satellite',
+      name: 'SGP4-Path-Only',
+      tle1: '1 00005U 58002B   00179.78495062  .00000023  00000-0  28098-4 0  4753',
+      tle2: '2 00005  34.2682 348.7242 1849677 331.7664  19.3264 10.82419157413667',
+      model: {
+        path: './Sgp4Sat.glb',
+        min_pix_size: 10,
+      },
+    })
+
+    const options = viewer.addObjectVisualizer.mock.calls[0][2]
+    expect(options.model).toBeUndefined()
   })
 })

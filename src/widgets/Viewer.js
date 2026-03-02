@@ -572,6 +572,60 @@ function mixinViewer(viewer, universe, options) {
     viewer.sensorGrids.push(grid)
   };
 
+  function resolveModelOffsetVector(input) {
+    if (!defined(input)) return undefined
+    if (input instanceof Cartesian3) {
+      if (input.x === 0 && input.y === 0 && input.z === 0) return undefined
+      return Cartesian3.clone(input)
+    }
+    if (Array.isArray(input) && input.length >= 3) {
+      const x = Number(input[0])
+      const y = Number(input[1])
+      const z = Number(input[2])
+      if (!Number.isFinite(x) || !Number.isFinite(y) || !Number.isFinite(z)) return undefined
+      if (x === 0 && y === 0 && z === 0) return undefined
+      return new Cartesian3(x, y, z)
+    }
+    if (typeof input === 'object') {
+      const x = Number(input.x)
+      const y = Number(input.y)
+      const z = Number(input.z)
+      if (!Number.isFinite(x) || !Number.isFinite(y) || !Number.isFinite(z)) return undefined
+      if (x === 0 && y === 0 && z === 0) return undefined
+      return new Cartesian3(x, y, z)
+    }
+    return undefined
+  }
+
+  function resolveModelOffsetFromOptions(options = {}) {
+    return resolveModelOffsetVector(options.offset)
+  }
+
+  function withLocalModelOffsetPosition(simObject, basePosition, modelOffset, isStatic = false) {
+    const scratchBase = new Cartesian3()
+    const scratchWorldOffset = new Cartesian3()
+    const scratchFrameOffset = new Cartesian3()
+    const scratchResult = new Cartesian3()
+    return new CallbackPositionProperty((time, result) => {
+      const base = isStatic
+        ? Cartesian3.clone(basePosition, scratchBase)
+        : basePosition.getValue(time, scratchBase)
+      if (!defined(base)) return undefined
+
+      simObject.update(time, universe)
+      simObject.transformVectorToWorld(modelOffset, scratchWorldOffset)
+
+      let offsetInViewFrame = scratchWorldOffset
+      if (viewer.referenceFrameView === ReferenceFrame.FIXED) {
+        universe.earth.update(time, universe)
+        offsetInViewFrame = universe.earth.transformVectorFromWorld(scratchWorldOffset, scratchFrameOffset)
+      }
+
+      const out = defined(result) ? result : scratchResult
+      return Cartesian3.add(base, offsetInViewFrame, out)
+    }, false, () => viewer.referenceFrameView)
+  }
+
   /**
    * Add a site visualizer to the viewer.
    * @param {SimObject} site 
@@ -579,15 +633,22 @@ function mixinViewer(viewer, universe, options) {
    * @param {Entity} options 
    */
   viewer.addSiteVisualizer = function (site, description, options) {
+    const visualizerOptions = { ...(options ?? {}) }
+    const modelOffset = resolveModelOffsetFromOptions(visualizerOptions)
+    delete visualizerOptions.offset
+
+    const basePosition = createObjectPositionProperty(site, universe, viewer)
     const base = {
       name: site.name,
       description: description,
-      position: createObjectPositionProperty(site, universe, viewer),
+      position: defined(modelOffset)
+        ? withLocalModelOffsetPosition(site, basePosition, modelOffset)
+        : basePosition,
       orientation: createObjectOrientationProperty(site, universe),
       simObjectRef: site
     }
 
-    const entity = viewer.entities.add(Object.assign(base, options))
+    const entity = viewer.entities.add(Object.assign(base, visualizerOptions))
     site.visualizer = entity
   }
 
@@ -599,26 +660,6 @@ function mixinViewer(viewer, universe, options) {
    */
   viewer.addObservatoryVisualizer = function (observatory, description, options = {}) {
     const visualizerOptions = { ...options }
-    const modelVerticalOffsetMeters = Number(visualizerOptions.modelVerticalOffsetMeters ?? 0)
-    delete visualizerOptions.modelVerticalOffsetMeters
-
-    if (Number.isFinite(modelVerticalOffsetMeters) && modelVerticalOffsetMeters !== 0) {
-      const basePosition = createObjectPositionProperty(observatory.site, universe, viewer)
-      const scratchPosition = new Cartesian3()
-      const scratchUp = new Cartesian3()
-      const scratchOffset = new Cartesian3()
-      const scratchResult = new Cartesian3()
-      visualizerOptions.position = new CallbackPositionProperty((time, result) => {
-        const base = basePosition.getValue(time, scratchPosition)
-        if (!defined(base)) {
-          return undefined
-        }
-        Cartesian3.normalize(base, scratchUp)
-        Cartesian3.multiplyByScalar(scratchUp, modelVerticalOffsetMeters, scratchOffset)
-        const out = defined(result) ? result : scratchResult
-        return Cartesian3.subtract(base, scratchOffset, out)
-      }, false, () => viewer.referenceFrameView)
-    }
 
     visualizerOptions.billboard = {
       image: viewer.BILLBOARD_GROUNDSTATION,
@@ -643,16 +684,26 @@ function mixinViewer(viewer, universe, options) {
 
     // Clone options so this helper never mutates caller-owned objects.
     const visualizerOptions = { ...(options ?? {}) }
+    const modelOffset = resolveModelOffsetFromOptions(visualizerOptions)
+    delete visualizerOptions.offset
 
     // Clear point object to be added to point collection for 2-3x better performance.
     const point = visualizerOptions.point
     delete visualizerOptions.point
 
+    const basePosition = isStatic ? object.position : createObjectPositionProperty(object, universe, viewer)
+
     // create base entity which uses the traditional object position callback
     const base = {
       name: object.name,
       description: description,
-      position: isStatic ? object.position : createObjectPositionProperty(object, universe, viewer),
+      position: defined(modelOffset)
+        ? (
+          isStatic
+            ? withLocalModelOffsetPosition(object, basePosition, modelOffset, true)
+            : withLocalModelOffsetPosition(object, basePosition, modelOffset)
+        )
+        : basePosition,
       simObjectRef: object,
       allowPicking: true
     }

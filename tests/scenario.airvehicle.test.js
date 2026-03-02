@@ -110,7 +110,7 @@ describe('scenario air vehicle support', () => {
     expect(Number.isFinite(q.w)).toBe(true)
   })
 
-  test('accepts object model entries with aliases and heading offset', () => {
+  test('accepts object model entries with canonical keys and heading offset', () => {
     const withOffset = {
       type: 'AirVehicle',
       name: 'Drone-Model-Offset',
@@ -119,10 +119,10 @@ describe('scenario air vehicle support', () => {
       altitude: 1200,
       heading: 0,
       model: {
-        path: '/assets/models/CesiumDrone.glb',
+        uri: '/assets/models/CesiumDrone.glb',
         scale: 1.5,
-        minimumPixelSize: 80,
-        heading_offset_deg: 90,
+        min_pix_size: 80,
+        heading_offset: 90,
       },
     }
     addScenarioObject(universe, viewer, withOffset)
@@ -132,8 +132,8 @@ describe('scenario air vehicle support', () => {
     expect(withOffsetOptions.model.scale).toBeCloseTo(1.5, 8)
     expect(withOffsetOptions.model.minimumPixelSize).toBe(80)
     expect(withOffsetOptions.model.maximumScale).toBe(20000)
-    expect(withOffsetOptions.model.path).toBeUndefined()
-    expect(withOffsetOptions.model.heading_offset_deg).toBeUndefined()
+    expect(withOffsetOptions.model.min_pix_size).toBeUndefined()
+    expect(withOffsetOptions.model.heading_offset).toBeUndefined()
     const qWithOffset = withOffsetOptions.orientation.getValue(viewer.clock.currentTime)
 
     viewer.addObjectVisualizer.mockClear()
@@ -142,8 +142,8 @@ describe('scenario air vehicle support', () => {
       model: {
         uri: '/assets/models/CesiumDrone.glb',
         scale: 1.5,
-        minimumPixelSize: 80,
-        headingOffsetDeg: 0,
+        min_pix_size: 80,
+        heading_offset: 0,
       },
     })
 
@@ -152,7 +152,7 @@ describe('scenario air vehicle support', () => {
     expect(Quaternion.equalsEpsilon(qWithOffset, qWithoutOffset, 1e-12)).toBe(false)
   })
 
-  test('supports model pitch/roll offset aliases and strips them from Cesium model options', () => {
+  test('supports model pitch/roll offsets and strips them from Cesium model options', () => {
     addScenarioObject(universe, viewer, {
       type: 'AirVehicle',
       name: 'Drone-Model-Roll-Offset',
@@ -162,14 +162,14 @@ describe('scenario air vehicle support', () => {
       heading: 0,
       model: {
         uri: '/assets/models/CesiumDrone.glb',
-        roll_offset_deg: 90,
-        pitch_offset_deg: 0,
+        roll_offset: 90,
+        pitch_offset: 0,
       },
     })
 
     const withOffsetOptions = viewer.addObjectVisualizer.mock.calls[0][2]
-    expect(withOffsetOptions.model.roll_offset_deg).toBeUndefined()
-    expect(withOffsetOptions.model.pitch_offset_deg).toBeUndefined()
+    expect(withOffsetOptions.model.roll_offset).toBeUndefined()
+    expect(withOffsetOptions.model.pitch_offset).toBeUndefined()
     const qWithOffset = withOffsetOptions.orientation.getValue(viewer.clock.currentTime)
 
     viewer.addObjectVisualizer.mockClear()
@@ -182,14 +182,50 @@ describe('scenario air vehicle support', () => {
       heading: 0,
       model: {
         uri: '/assets/models/CesiumDrone.glb',
-        rollOffsetDeg: 0,
-        pitchOffsetDeg: 0,
+        roll_offset: 0,
+        pitch_offset: 0,
       },
     })
 
     const noOffsetOptions = viewer.addObjectVisualizer.mock.calls[0][2]
     const qWithoutOffset = noOffsetOptions.orientation.getValue(viewer.clock.currentTime)
     expect(Quaternion.equalsEpsilon(qWithOffset, qWithoutOffset, 1e-12)).toBe(false)
+  })
+
+  test('does not map deprecated heading_offset_deg', () => {
+    addScenarioObject(universe, viewer, {
+      type: 'AirVehicle',
+      name: 'Drone-Deprecated-Heading-Offset',
+      latitude: 34.25,
+      longitude: -117.1,
+      altitude: 1200,
+      heading: 0,
+      model: {
+        uri: '/assets/models/CesiumDrone.glb',
+        heading_offset_deg: 90,
+      },
+    })
+
+    const deprecatedOptions = viewer.addObjectVisualizer.mock.calls[0][2]
+    const qDeprecated = deprecatedOptions.orientation.getValue(viewer.clock.currentTime)
+
+    viewer.addObjectVisualizer.mockClear()
+    addScenarioObject(universe, viewer, {
+      type: 'AirVehicle',
+      name: 'Drone-Deprecated-Heading-Offset',
+      latitude: 34.25,
+      longitude: -117.1,
+      altitude: 1200,
+      heading: 0,
+      model: {
+        uri: '/assets/models/CesiumDrone.glb',
+        heading_offset: 0,
+      },
+    })
+
+    const canonicalOptions = viewer.addObjectVisualizer.mock.calls[0][2]
+    const qCanonical = canonicalOptions.orientation.getValue(viewer.clock.currentTime)
+    expect(Quaternion.equalsEpsilon(qDeprecated, qCanonical, 1e-12)).toBe(true)
   })
 
   test('skips invalid air vehicle definitions without coordinates', () => {
