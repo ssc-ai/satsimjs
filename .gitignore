@@ -6,3 +6,4 @@ package-lock.json
 .eslintcache
 /coverage/
 /app/dist/
+/internal/
