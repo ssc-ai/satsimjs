@@ -3,8 +3,9 @@ import { createObjectPositionProperty, createObjectOrientationProperty } from '.
 import CompountElementVisualizer from './CompoundElementVisualizer.js'
 
 class SensorFieldOfRegardVisualizer extends CompountElementVisualizer {
-  constructor(viewer, site, sensor, universe) {
-    super(Color.PURPLE, 0.1, 0.5)
+  constructor(viewer, site, sensor, universe, color) {
+    const baseColor = color ?? Color.PURPLE
+    super(baseColor, 0.1, 0.5)
 
     if (defined(sensor.field_of_regard)) {
       for (let i = 0; i < sensor.field_of_regard.length; i++) {
@@ -77,8 +78,8 @@ class SensorFieldOfRegardVisualizer extends CompountElementVisualizer {
             maximumClock: maxClkRad,
             minimumCone: minCone,
             maximumCone: maxCone,
-            material: Color.PURPLE.withAlpha(0.1),
-            outlineColor: Color.PURPLE.withAlpha(0.5),
+            material: baseColor.withAlpha(0.1),
+            outlineColor: baseColor.withAlpha(0.5),
             outline: false, // disable built-in outline to avoid splitLongitude artifacts
             slicePartitions: 36,
             stackPartitions: 20
@@ -100,8 +101,8 @@ class SensorFieldOfRegardVisualizer extends CompountElementVisualizer {
             innerRadii: new Cartesian3(inner, inner, inner),
             minimumCone: minCone,
             maximumCone: maxCone,
-            material: Color.PURPLE.withAlpha(0.1),
-            outlineColor: Color.PURPLE.withAlpha(0.5),
+            material: baseColor.withAlpha(0.1),
+            outlineColor: baseColor.withAlpha(0.5),
             outline: false,
             slicePartitions: 36,
             stackPartitions: 20

@@ -84,6 +84,36 @@ describe('Visibility Functions', () => {
             });
         });
 
+        test('should return one visibility row per sensor for a multi-sensor observatory', () => {
+            const observatories = [{
+                ...mockObservatory,
+                sensors: [
+                    {
+                        name: 'HSV Narrow',
+                        field_of_regard: [{ clock: [0, 90], elevation: [10, 80] }]
+                    },
+                    {
+                        name: 'HSV Wide',
+                        field_of_regard: [{ clock: [180, 270], elevation: [10, 80] }]
+                    }
+                ]
+            }];
+
+            const visibility = getVisibility(mockUniverse, mockViewer, observatories, mockSatellite);
+
+            expect(visibility).toHaveLength(2);
+            expect(visibility[0].sensor).toBe('HSV Narrow');
+            expect(visibility[0].az).toBe(45);
+            expect(visibility[0].el).toBe(30);
+            expect(visibility[0].visible).toBe(true);
+            expect(visibility[1].sensor).toBe('HSV Wide');
+            expect(visibility[1].az).toBe(45);
+            expect(visibility[1].el).toBe(30);
+            expect(visibility[1].visible).toBe(false);
+            expect(mockSatellite.update).toHaveBeenCalledTimes(1);
+            expect(calculateTargetBrightness).toHaveBeenCalledTimes(1);
+        });
+
         test('should call satellite update with correct parameters', () => {
             const observatories = [mockObservatory];
             

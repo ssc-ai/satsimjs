@@ -575,7 +575,6 @@ describe('Universe', () => {
     let mockSite;
     let mockGimbal;
     let mockSensor;
-    let mockObservatory;
 
     beforeEach(() => {
       mockSite = {
@@ -596,13 +595,7 @@ describe('Universe', () => {
         attach: jest.fn(),
         update: jest.fn()
       };
-      
-      mockObservatory = {
-        site: mockSite,
-        gimbal: mockGimbal,
-        sensor: mockSensor
-      };
-      
+
       EarthGroundStation.mockImplementation((lat, lon, alt, name) => {
         return { ...mockSite, name: name };
       });
@@ -612,7 +605,15 @@ describe('Universe', () => {
       ElectroOpicalSensor.mockImplementation((h, w, y, x, for_, name) => {
         return { ...mockSensor, name: name };
       });
-      Observatory.mockImplementation(() => mockObservatory);
+      Observatory.mockImplementation((site, gimbal, sensors) => {
+        const sensorList = Array.isArray(sensors) ? sensors : [sensors]
+        return {
+          site,
+          gimbal,
+          sensors: sensorList,
+          sensor: sensorList[0]
+        }
+      });
     });
 
     test('should create complete observatory with all components', () => {
@@ -641,16 +642,20 @@ describe('Universe', () => {
       expect(Observatory).toHaveBeenCalledWith(
         expect.objectContaining({ name: 'TestObs' }),
         expect.objectContaining({ name: 'TestObs Gimbal' }),
-        expect.objectContaining({ name: 'TestObs Sensor' })
+        [expect.objectContaining({ name: 'TestObs Sensor' })]
       );
       
       // Verify collections are updated
       expect(universe.objects['TestObs']).toEqual(expect.objectContaining({ name: 'TestObs' }));
       expect(universe.gimbals).toContainEqual(expect.objectContaining({ name: 'TestObs Gimbal' }));
       expect(universe.sensors).toContainEqual(expect.objectContaining({ name: 'TestObs Sensor' }));
-      expect(universe._observatories).toContain(mockObservatory);
-      
-      expect(result).toBe(mockObservatory);
+      expect(universe._observatories).toContain(result);
+      expect(result).toEqual(expect.objectContaining({
+        site: expect.objectContaining({ name: 'TestObs' }),
+        gimbal: expect.objectContaining({ name: 'TestObs Gimbal' }),
+        sensors: [expect.objectContaining({ name: 'TestObs Sensor' })],
+        sensor: expect.objectContaining({ name: 'TestObs Sensor' })
+      }));
     });
 
     test('should handle different sensor configurations', () => {
@@ -765,6 +770,45 @@ describe('Universe', () => {
         16384, 16384, 5.0, 5.0, [], 'HugeSensor Sensor'
       );
     });
+
+    test('should accept object-form configuration with multiple sensors', () => {
+      const result = universe.addGroundElectroOpticalObservatory({
+        name: 'HSV Laser Test Range',
+        latitude: 34.6707,
+        longitude: -86.6508,
+        altitude: 5,
+        gimbalSlewRates: {
+          az: { maxRateDegPerSec: 8 },
+          el: { maxRateDegPerSec: 6 }
+        },
+        sensorMaxDistance: 7500,
+        sensors: [
+          { height: 2048, width: 2048, y_fov: 1, x_fov: 1, field_of_regard: [] },
+          { name: 'HSV Wide', sensor_height: 1024, sensor_width: 1024, y_fov: 8, x_fov: 8, field_of_regard: [], color: '#ff0000' }
+        ]
+      });
+
+      expect(EarthGroundStation).toHaveBeenCalledWith(34.6707, -86.6508, 5, 'HSV Laser Test Range');
+      expect(AzElGimbal).toHaveBeenCalledWith('HSV Laser Test Range Gimbal');
+      expect(ElectroOpicalSensor).toHaveBeenNthCalledWith(
+        1,
+        2048, 2048, 1, 1, [],
+        'HSV Laser Test Range Sensor'
+      );
+      expect(ElectroOpicalSensor).toHaveBeenNthCalledWith(
+        2,
+        1024, 1024, 8, 8, [],
+        'HSV Wide'
+      );
+      expect(mockGimbal.setAxisSlewRates).toHaveBeenCalledWith({
+        az: { maxRateDegPerSec: 8 },
+        el: { maxRateDegPerSec: 6 }
+      });
+      expect(universe.sensors).toHaveLength(2);
+      expect(result.sensors).toHaveLength(2);
+      expect(result.sensor.name).toBe('HSV Laser Test Range Sensor');
+      expect(result.sensors[1].color).toBe('#ff0000');
+    });
   });
 
   describe('update', () => {
@@ -840,6 +884,29 @@ describe('Universe', () => {
       expect(observatory1.site.update).toHaveBeenCalledWith(mockTime, universe, true);
       expect(observatory1.gimbal.update).toHaveBeenCalledWith(mockTime, universe, true);
       expect(observatory1.sensor.update).toHaveBeenCalledWith(mockTime, universe, true);
+    });
+
+    test('should update every sensor on a multi-sensor observatory exactly once per observatory pass', () => {
+      const sensor1 = { name: 'Sensor-1', update: jest.fn() }
+      const sensor2 = { name: 'Sensor-2', update: jest.fn() }
+      const multiSensorObservatory = {
+        site: { update: jest.fn() },
+        gimbal: { update: jest.fn() },
+        sensors: [sensor1, sensor2]
+      }
+
+      universe._observatories = [multiSensorObservatory]
+      universe._trackables = []
+      universe._nontrackables = []
+
+      universe.update(mockTime)
+
+      expect(multiSensorObservatory.site.update).toHaveBeenCalledWith(mockTime, universe, false)
+      expect(multiSensorObservatory.gimbal.update).toHaveBeenCalledWith(mockTime, universe, false)
+      expect(sensor1.update).toHaveBeenCalledTimes(1)
+      expect(sensor1.update).toHaveBeenCalledWith(mockTime, universe, false)
+      expect(sensor2.update).toHaveBeenCalledTimes(1)
+      expect(sensor2.update).toHaveBeenCalledWith(mockTime, universe, false)
     });
 
     test('should handle empty collections gracefully', () => {

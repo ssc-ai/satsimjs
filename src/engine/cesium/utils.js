@@ -1,6 +1,7 @@
 import { Color, SampledPositionProperty, JulianDate, Cartesian3, LagrangePolynomialApproximation, defined, ReferenceFrame, Matrix3, Quaternion, CallbackProperty } from 'cesium'
 import { CallbackPositionProperty, ElectroOpicalSensor } from '../../index.js'
 import { southEastZenithToAzEl } from '../dynamics/gimbal.js'
+import { getObservatorySensors, isSensorVisible } from '../objects/observatoryUtils.js'
 
 function toSampledPositionProperty(object, context, start, stop, step) {
   start = JulianDate.addSeconds(start, -step, new JulianDate())
@@ -145,20 +146,17 @@ function colorVisibleSatellites(universe, observatories, time, objects=undefined
 
 
 function applyToVisible(universe, observatory, time, objects, callback) {
-  const field_of_regard = observatory.sensor.field_of_regard;
+  const sensors = getObservatorySensors(observatory)
   observatory.site.update(time, universe)
   const localPos = new Cartesian3();
   objects.forEach((sat) => {
     sat.update(time, universe)
     observatory.site.transformPointFromWorld(sat.worldPosition, localPos);
-    let [az, el, r] = southEastZenithToAzEl(localPos)
-    if(defined(field_of_regard)) {
-      for(let i = 0; i < field_of_regard.length; i ++) {
-        const f = field_of_regard[i];
-        if(az > f.clock[0] && az < f.clock[1] && el > f.elevation[0] && el < f.elevation[1]) {
-          callback(sat);
-          break;
-        }
+    let [az, el] = southEastZenithToAzEl(localPos)
+    for (let i = 0; i < sensors.length; i++) {
+      if (isSensorVisible(sensors[i], az, el)) {
+        callback(sat);
+        break;
       }
     }
   });

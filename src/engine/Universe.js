@@ -9,6 +9,7 @@ import TwoBodySatellite from "./objects/TwoBodySatellite.js";
 import AirVehicle from "./objects/AirVehicle.js";
 import SimObject from "./objects/SimObject.js";
 import Observatory from "./objects/Observatory.js";
+import { getObservatorySensors } from "./objects/observatoryUtils.js";
 import { Cartesian3, JulianDate, defined } from "cesium";
 import EventQueue from "./event/EventQueue.js";
 
@@ -102,6 +103,107 @@ function findObservatoryByName(universe, observerName) {
     if (obs?.site?.name === observerName) return obs
   }
   return undefined
+}
+
+/**
+ * Generate a default sensor name for an observatory sensor slot.
+ *
+ * @param {string} observatoryName
+ * @param {number} [sensorIndex=0]
+ * @returns {string}
+ */
+function defaultObservatorySensorName(observatoryName, sensorIndex = 0) {
+  const baseName = String(observatoryName ?? '').trim()
+  const sensorBase = baseName ? `${baseName} Sensor` : 'Sensor'
+  return sensorIndex === 0 ? sensorBase : `${sensorBase} ${sensorIndex + 1}`
+}
+
+/**
+ * Normalize a single sensor config into the canonical runtime shape used by
+ * observatory construction.
+ *
+ * @param {Object|undefined} entry
+ * @param {string} observatoryName
+ * @param {number} [sensorIndex=0]
+ * @returns {{height:number, width:number, y_fov:number, x_fov:number, field_of_regard:Array, color:any, name:string}}
+ */
+function normalizeObservatorySensorConfig(entry, observatoryName, sensorIndex = 0) {
+  const sensorName = String(entry?.name ?? '').trim() || defaultObservatorySensorName(observatoryName, sensorIndex)
+  return {
+    height: Number(entry?.height ?? entry?.sensor_height),
+    width: Number(entry?.width ?? entry?.sensor_width),
+    y_fov: Number(entry?.y_fov ?? 5),
+    x_fov: Number(entry?.x_fov ?? 5),
+    field_of_regard: entry?.field_of_regard ?? [],
+    color: entry?.color,
+    name: sensorName
+  }
+}
+
+/**
+ * Normalize legacy positional observatory arguments or an object-form
+ * observatory config into a canonical runtime configuration.
+ *
+ * @param {string|Object} nameOrConfig
+ * @param {number} [latitude]
+ * @param {number} [longitude]
+ * @param {number} [altitude]
+ * @param {string} [gimbalType]
+ * @param {number} [height]
+ * @param {number} [width]
+ * @param {number} [y_fov]
+ * @param {number} [x_fov]
+ * @param {Array} [field_of_regard]
+ * @param {Object<string, number|Object>} [gimbalSlewRates]
+ * @param {number} [sensorMaxDistance]
+ * @returns {{name:string, latitude:number, longitude:number, altitude:number, gimbalType:string, gimbalSlewRates:Object|undefined, sensorMaxDistance:number|undefined, sensors:Array<Object>}}
+ */
+function normalizeGroundObservatoryConfig(nameOrConfig, latitude, longitude, altitude, gimbalType, height, width, y_fov, x_fov, field_of_regard, gimbalSlewRates, sensorMaxDistance) {
+  if (defined(nameOrConfig) && typeof nameOrConfig === 'object' && !Array.isArray(nameOrConfig)) {
+    const config = nameOrConfig
+    const name = String(config.name ?? '')
+    const sensorsInput = Array.isArray(config.sensors) && config.sensors.length > 0
+      ? config.sensors
+      : [{
+        height: config.height ?? config.sensor_height,
+        width: config.width ?? config.sensor_width,
+        y_fov: config.y_fov,
+        x_fov: config.x_fov,
+        field_of_regard: config.field_of_regard,
+        name: config.sensor_name
+      }]
+
+    return {
+      name,
+      latitude: Number(config.latitude),
+      longitude: Number(config.longitude),
+      altitude: Number(config.altitude ?? 0),
+      gimbalType: config.gimbalType ?? config.gimbal_type ?? 'AzElGimbal',
+      gimbalSlewRates: config.gimbalSlewRates ?? config.gimbal_slew_rates,
+      sensorMaxDistance: config.sensorMaxDistance ?? config.sensor_max_distance,
+      sensors: sensorsInput.map((sensor, index) => normalizeObservatorySensorConfig(sensor, name, index))
+    }
+  }
+
+  const name = String(nameOrConfig ?? '')
+  return {
+    name,
+    latitude: Number(latitude),
+    longitude: Number(longitude),
+    altitude: Number(altitude ?? 0),
+    gimbalType,
+    gimbalSlewRates,
+    sensorMaxDistance,
+    sensors: [
+      normalizeObservatorySensorConfig({
+        height,
+        width,
+        y_fov,
+        x_fov,
+        field_of_regard
+      }, name, 0)
+    ]
+  }
 }
 
 /**
@@ -483,47 +585,81 @@ class Universe {
 
   /**
    * Adds a ground electro-optical observatory to the universe.
-   * @param {string} name - The name of the observatory.
-   * @param {number} latitude - The latitude of the observatory in degrees.
-   * @param {number} longitude - The longitude of the observatory in degrees.
-   * @param {number} altitude - The altitude of the observatory in meters.
-   * @param {string} gimbalType - The type of gimbal used by the observatory.
-   * @param {number} height - The height of the sensor in pixels.
-   * @param {number} width - The width of the sensor in pixels.
-   * @param {number} y_fov - The vertical field of view of the sensor in degrees.
-   * @param {number} x_fov - The horizontal field of view of the sensor in degrees.
-   * @param {Array<number>} field_of_regard - The field of regard of the sensor.
+   *
+   * Supported forms:
+   * - Legacy positional arguments for a single sensor.
+   * - Object config with `sensors[]` for a shared-gimbal multi-sensor observatory.
+   *
+   * @param {string|Object} name - Observatory name, or an object config containing
+   *   `name`, `latitude`, `longitude`, `altitude`, `gimbalSlewRates`,
+   *   `sensorMaxDistance`, and either legacy single-sensor fields or `sensors[]`.
+   * @param {number} [latitude] - The latitude of the observatory in degrees.
+   * @param {number} [longitude] - The longitude of the observatory in degrees.
+   * @param {number} [altitude] - The altitude of the observatory in meters.
+   * @param {string} [gimbalType] - The type of gimbal used by the observatory.
+   * @param {number} [height] - The height of the legacy single sensor in pixels.
+   * @param {number} [width] - The width of the legacy single sensor in pixels.
+   * @param {number} [y_fov] - The vertical field of view of the legacy single sensor in degrees.
+   * @param {number} [x_fov] - The horizontal field of view of the legacy single sensor in degrees.
+   * @param {Array<number>} [field_of_regard] - The field of regard of the legacy single sensor.
    * @param {Object<string, number|Object>} [gimbalSlewRates] - Optional per-axis slew settings.
    * @param {number} [sensorMaxDistance] - Optional fallback max sensor/gimbal range in meters when idle.
-   * @returns {{site: EarthGroundStation, gimbal: AzElGimbal, sensor: ElectroOpicalSensor}} - The added observatory.
+   * @returns {{site: EarthGroundStation, gimbal: AzElGimbal, sensor: ElectroOpicalSensor|undefined, sensors: Array<ElectroOpicalSensor>}} - The added observatory.
    */
   addGroundElectroOpticalObservatory(name, latitude, longitude, altitude, gimbalType, height, width, y_fov, x_fov, field_of_regard, gimbalSlewRates = undefined, sensorMaxDistance = undefined) {
-    const site = new EarthGroundStation(latitude, longitude, altitude, name)
+    const config = normalizeGroundObservatoryConfig(
+      name,
+      latitude,
+      longitude,
+      altitude,
+      gimbalType,
+      height,
+      width,
+      y_fov,
+      x_fov,
+      field_of_regard,
+      gimbalSlewRates,
+      sensorMaxDistance
+    )
+
+    const site = new EarthGroundStation(config.latitude, config.longitude, config.altitude, config.name)
     site.attach(this.earth)
 
-    const gimbal = new AzElGimbal(name + ' Gimbal')
-    const maxRangeMeters = Number(sensorMaxDistance)
+    const gimbal = new AzElGimbal(config.name + ' Gimbal')
+    const maxRangeMeters = Number(config.sensorMaxDistance)
     if (Number.isFinite(maxRangeMeters) && maxRangeMeters > 0) {
       gimbal.maxRange = maxRangeMeters
     }
-    if (defined(gimbalSlewRates) && typeof gimbal.setAxisSlewRates === 'function') {
-      gimbal.setAxisSlewRates(gimbalSlewRates)
+    if (defined(config.gimbalSlewRates) && typeof gimbal.setAxisSlewRates === 'function') {
+      gimbal.setAxisSlewRates(config.gimbalSlewRates)
     }
     gimbal.attach(site)
     this.addObject(gimbal, false)
 
-    const sensor = new ElectroOpicalSensor(height, width, y_fov, x_fov, field_of_regard, name + ' Sensor')
-    sensor.maxRange = gimbal.maxRange
-    sensor.attach(gimbal)
-    this.addObject(sensor, false)
+    const sensors = config.sensors.map((sensorConfig) => {
+      const sensor = new ElectroOpicalSensor(
+        sensorConfig.height,
+        sensorConfig.width,
+        sensorConfig.y_fov,
+        sensorConfig.x_fov,
+        sensorConfig.field_of_regard,
+        sensorConfig.name
+      )
+      sensor.maxRange = gimbal.maxRange
+      if (defined(sensorConfig.color)) {
+        sensor.color = sensorConfig.color
+      }
+      sensor.attach(gimbal)
+      this.addObject(sensor, false)
+      this._sensors.push(sensor)
+      return sensor
+    })
 
-    this._objects[name] = site
+    this._objects[config.name] = site
     this._gimbals.push(gimbal)
 
-    this._sensors.push(sensor)
-
-    const observatory = new Observatory(site, gimbal, sensor)
-    observatory.name = name
+    const observatory = new Observatory(site, gimbal, sensors)
+    observatory.name = config.name
     this._observatories.push(observatory)
 
 
@@ -613,7 +749,9 @@ class Universe {
     this._observatories.forEach((o) => {
       o.site.update(time, this, forceUpdate)
       o.gimbal.update(time, this, forceUpdate)
-      o.sensor.update(time, this, forceUpdate)
+      getObservatorySensors(o).forEach((sensor) => {
+        sensor?.update?.(time, this, forceUpdate)
+      })
     })
   }
 }

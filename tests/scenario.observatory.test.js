@@ -12,6 +12,7 @@ describe('scenario observatory model support', () => {
       site: { name: 'HSV Laser Test Range' },
       gimbal: { name: 'Gimbal' },
       sensor: { name: 'Sensor' },
+      sensors: [{ name: 'Sensor' }],
     }
 
     viewer = {
@@ -110,8 +111,8 @@ describe('scenario observatory model support', () => {
     })
 
     expect(universe.addGroundElectroOpticalObservatory).toHaveBeenCalledTimes(1)
-    const args = universe.addGroundElectroOpticalObservatory.mock.calls[0]
-    expect(args[10]).toEqual({
+    const [config] = universe.addGroundElectroOpticalObservatory.mock.calls[0]
+    expect(config.gimbalSlewRates).toEqual({
       az: { maxRateDegPerSec: 8, maxAccelDegPerSec2: 24 },
       el: { maxRateDegPerSec: 6 }
     })
@@ -132,8 +133,34 @@ describe('scenario observatory model support', () => {
     })
 
     expect(universe.addGroundElectroOpticalObservatory).toHaveBeenCalledTimes(1)
-    const args = universe.addGroundElectroOpticalObservatory.mock.calls[0]
-    expect(args[11]).toBe(7500)
+    const [config] = universe.addGroundElectroOpticalObservatory.mock.calls[0]
+    expect(config.sensorMaxDistance).toBe(7500)
+  })
+
+  test('forwards sensors array into observatory creation and preserves legacy aliases', () => {
+    addScenarioObject(universe, viewer, {
+      type: 'GroundEOObservatory',
+      name: 'HSV Laser Test Range',
+      latitude: 34.6707,
+      longitude: -86.6508,
+      altitude: 5,
+      height: 2048,
+      width: 2048,
+      y_fov: 1,
+      x_fov: 1,
+      sensors: [
+        { name: 'HSV Narrow', height: 2048, width: 2048, y_fov: 1, x_fov: 1, field_of_regard: [] },
+        { name: 'HSV Wide', sensor_height: 1024, sensor_width: 1024, y_fov: 8, x_fov: 8, field_of_regard: [], color: '#ff0000' }
+      ]
+    })
+
+    const [config] = universe.addGroundElectroOpticalObservatory.mock.calls[0]
+    expect(config.height).toBe(2048)
+    expect(config.width).toBe(2048)
+    expect(config.sensors).toEqual([
+      { name: 'HSV Narrow', height: 2048, width: 2048, y_fov: 1, x_fov: 1, field_of_regard: [] },
+      { name: 'HSV Wide', height: 1024, width: 1024, y_fov: 8, x_fov: 8, field_of_regard: [], color: '#ff0000' }
+    ])
   })
 
   test('does not map deprecated vertical_offset_m to offset', () => {

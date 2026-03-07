@@ -12,6 +12,7 @@ import CoverageGridVisualizer from "../engine/cesium/CoverageGridVisualizer.js"
 import SimObject from "../engine/objects/SimObject.js"
 import { CompoundElementVisualizer } from "../index.js"
 import Observatory from "../engine/objects/Observatory.js"
+import { getObservatorySensors } from "../engine/objects/observatoryUtils.js"
 import { getShadowStatus, ShadowState } from "../engine/geometry/shadow.js"
 
 
@@ -667,19 +668,52 @@ function mixinViewer(viewer, universe, options) {
   }
 
   /**
+   * Resolve an optional scenario/runtime sensor color into a Cesium `Color`.
+   *
+   * Supports CSS color strings and 3-component arrays in either `[0..1]` or
+   * `[0..255]` RGB form.
+   *
+   * @param {string|number[]|undefined} input
+   * @returns {Color|undefined}
+   */
+  function resolveSensorColor(input) {
+    if (Array.isArray(input) && input.length === 3) {
+      const components = input.map((value) => Number(value))
+      if (components.every((value) => Number.isFinite(value))) {
+        const useByteScale = components.some((value) => Math.abs(value) > 1)
+        const rgbBytes = components
+          .map((value) => (useByteScale ? value : value * 255))
+          .map((value) => Math.max(0, Math.min(255, Math.round(value))))
+        return Color.fromBytes(rgbBytes[0], rgbBytes[1], rgbBytes[2], 255)
+      }
+    }
+
+    if (typeof input === 'string') {
+      const cssColor = Color.fromCssColorString(input.trim())
+      if (defined(cssColor)) {
+        cssColor.alpha = 1.0
+        return cssColor
+      }
+    }
+
+    return undefined
+  }
+
+  /**
    * Add a sensor visualizer to the viewer.
    * 
    * @param {Site} site - The site.
    * @param {Gimbal} gimbal - The gimbal.
-   * @param {ElectroOpicalSensor} sensor - The sensor.
+   * @param {ElectroOpicalSensor & {color?: string|number[]}} sensor - The sensor.
    */
   viewer.addSensorVisualizer = function (site, gimbal, sensor) {
-    const forViz = new SensorFieldOfRegardVisualizer(viewer, site, sensor, universe)
+    const sensorColor = resolveSensorColor(sensor?.color)
+    const forViz = new SensorFieldOfRegardVisualizer(viewer, site, sensor, universe, sensorColor)
     forViz.show = false
     viewer.sensorForVisualizers.push(forViz)
     sensor.visualizer.fieldOfRegard = forViz
 
-    const fovViz = new SensorFieldOfViewVisualizer(viewer, site, gimbal, sensor, universe)
+    const fovViz = new SensorFieldOfViewVisualizer(viewer, site, gimbal, sensor, universe, sensorColor)
     viewer.sensorFovVisualizers.push(fovViz)
     sensor.visualizer.fieldOfView = fovViz
 
@@ -817,7 +851,9 @@ function mixinViewer(viewer, universe, options) {
     visualizerOptions.simObjectRef = observatory
 
     viewer.addSiteVisualizer(observatory.site, description, visualizerOptions)
-    viewer.addSensorVisualizer(observatory.site, observatory.gimbal, observatory.sensor)
+    getObservatorySensors(observatory).forEach((sensor) => {
+      viewer.addSensorVisualizer(observatory.site, observatory.gimbal, sensor)
+    })
   }
 
   /**
@@ -958,11 +994,16 @@ function mixinViewer(viewer, universe, options) {
     if (defined(entity) && defined(entity.simObjectRef)) {
       const obj = entity.simObjectRef
       if (obj instanceof Observatory) {
-        toolbar.addToggleButton('Field of Regard', obj.sensor.visualizer.fieldOfRegard.show, (checked) => {
-          obj.sensor.visualizer.fieldOfRegard.show = checked
-        });
-        toolbar.addToggleButton('Field of View', obj.sensor.visualizer.fieldOfView.show, (checked) => {
-          obj.sensor.visualizer.fieldOfView.show = checked
+        getObservatorySensors(obj).forEach((sensor) => {
+          if (!defined(sensor?.visualizer?.fieldOfRegard) || !defined(sensor?.visualizer?.fieldOfView)) {
+            return
+          }
+          toolbar.addToggleButton(`Field of Regard: ${sensor.name}`, sensor.visualizer.fieldOfRegard.show, (checked) => {
+            sensor.visualizer.fieldOfRegard.show = checked
+          });
+          toolbar.addToggleButton(`Field of View: ${sensor.name}`, sensor.visualizer.fieldOfView.show, (checked) => {
+            sensor.visualizer.fieldOfView.show = checked
+          });
         });
       } else if (universe._trackables.includes(obj)) {
         toolbar.addToggleButton('Path', obj.visualizer.path.show.getValue(), (checked) => {

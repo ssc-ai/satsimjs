@@ -140,6 +140,37 @@ function resolveSensorMaxDistance(input) {
   return (Number.isFinite(meters) && meters > 0) ? meters : undefined
 }
 
+/**
+ * Normalize a scenario sensor entry into the canonical observatory sensor shape.
+ *
+ * @param {Object} sensor
+ * @returns {{name?: string, height:number, width:number, y_fov:number, x_fov:number, field_of_regard:Array, color?: any}}
+ */
+function resolveScenarioSensorConfig(sensor) {
+  return {
+    ...(sensor.name != null ? { name: String(sensor.name) } : {}),
+    height: Number(sensor.height ?? sensor.sensor_height),
+    width: Number(sensor.width ?? sensor.sensor_width),
+    y_fov: Number(sensor.y_fov ?? 5),
+    x_fov: Number(sensor.x_fov ?? 5),
+    field_of_regard: sensor.field_of_regard ?? [],
+    ...(sensor.color != null ? { color: sensor.color } : {})
+  }
+}
+
+/**
+ * Normalize optional multi-sensor observatory definitions from a scenario entry.
+ *
+ * @param {Object} obs
+ * @returns {Array<Object>|undefined}
+ */
+function resolveScenarioObservatorySensors(obs) {
+  if (!(Array.isArray(obs?.sensors) && obs.sensors.length > 0)) {
+    return undefined
+  }
+  return obs.sensors.map((sensor) => resolveScenarioSensorConfig(sensor ?? {}))
+}
+
 function resolveVector3(value, fallback = [0, 0, 0]) {
   if (value instanceof Cartesian3) {
     return Cartesian3.clone(value)
@@ -348,6 +379,9 @@ function createAirVehicleModelOrientationProperty(vehicle, universe, headingOffs
  * @param {number|string} [obs.y_fov=5] - Sensor FOV in Y (deg).
  * @param {number|string} [obs.x_fov=5] - Sensor FOV in X (deg).
  * @param {Array} [obs.field_of_regard=[]] - Optional field of regard.
+ * @param {Array<Object>} [obs.sensors] - Optional multi-sensor definitions sharing one gimbal.
+ *   Each entry may include `name`, `height`/`sensor_height`, `width`/`sensor_width`,
+ *   `x_fov`, `y_fov`, `field_of_regard`, and optional `color`.
  * @param {Object<string, number|Object>} [obs.gimbal_slew_rates] - Optional per-axis slew settings.
  * @param {number|string} [obs.sensor_max_distance] - Optional fallback sensor range in meters when idle.
  * @param {string|Object} [obs.model] - Optional 3D model URI or Cesium model options.
@@ -358,25 +392,27 @@ export function addObservatory(universe, viewer, obs) {
     return
   }
 
-  const o = universe.addGroundElectroOpticalObservatory(
-    String(obs.name),
-    Number(obs.latitude),
-    Number(obs.longitude),
-    Number(obs.altitude ?? 0),
-    'AzElGimbal',
-    Number(obs.height),
-    Number(obs.width),
-    Number(obs.y_fov ?? 5),
-    Number(obs.x_fov ?? 5),
-    obs.field_of_regard ?? [],
-    resolveGimbalSlewRates(
+  const sensors = resolveScenarioObservatorySensors(obs)
+  const o = universe.addGroundElectroOpticalObservatory({
+    name: String(obs.name),
+    latitude: Number(obs.latitude),
+    longitude: Number(obs.longitude),
+    altitude: Number(obs.altitude ?? 0),
+    gimbalType: 'AzElGimbal',
+    height: Number(obs.height ?? obs.sensor_height),
+    width: Number(obs.width ?? obs.sensor_width),
+    y_fov: Number(obs.y_fov ?? 5),
+    x_fov: Number(obs.x_fov ?? 5),
+    field_of_regard: obs.field_of_regard ?? [],
+    ...(sensors ? { sensors } : {}),
+    gimbalSlewRates: resolveGimbalSlewRates(
       obs.gimbal_slew_rates ??
       obs.gimbalSlewRates ??
       obs.slew_rates ??
       obs.slewRates
     ),
-    resolveSensorMaxDistance(obs)
-  )
+    sensorMaxDistance: resolveSensorMaxDistance(obs)
+  })
 
   const desc = `<div><b>${obs.name}</b><br>` +
     `Latitude: ${obs.latitude} deg<br>` +
@@ -706,6 +742,7 @@ export function addScenarioObject(universe, viewer, obj) {
         y_fov: obj.y_fov,
         x_fov: obj.x_fov,
         field_of_regard: obj.field_of_regard,
+        sensors: obj.sensors,
         gimbal_slew_rates: (obj.gimbal_slew_rates != null ? obj.gimbal_slew_rates : obj.gimbalSlewRates),
         sensor_max_distance: (
           obj.sensor_max_distance != null

@@ -120,6 +120,15 @@ describe('Observatory', () => {
       expect(observatory.gimbal).toBe(mockGimbal);
       expect(observatory.sensor).toBe(altSensor);
     });
+
+    it('should normalize sensor arrays and preserve the primary sensor alias', () => {
+      const wideSensor = new ElectroOpicalSensor(200, 200, 20, 20, [], 'WideSensor');
+      const observatory = new Observatory(mockSite, mockGimbal, [mockSensor, wideSensor]);
+
+      expect(observatory.sensors).toEqual([mockSensor, wideSensor]);
+      expect(observatory.sensor).toBe(mockSensor);
+      expect(observatory._sensor).toBe(mockSensor);
+    });
   });
 
   describe('site getter', () => {
@@ -503,6 +512,30 @@ describe('Observatory', () => {
       // If we modify the site object itself, observatory should see the changes
       // (since it holds a reference, not a copy)
       expect(observatory.site === mutableSite).toBe(true);
+    });
+  });
+
+  describe('multi-sensor support', () => {
+    it('should update sensors collection when primary sensor changes', () => {
+      const wideSensor = new ElectroOpicalSensor(200, 200, 20, 20, [], 'WideSensor');
+      const replacementSensor = new ElectroOpicalSensor(300, 300, 30, 30, [], 'ReplacementSensor');
+      const observatory = new Observatory(mockSite, mockGimbal, [mockSensor, wideSensor]);
+
+      observatory.sensor = replacementSensor;
+
+      expect(observatory.sensor).toBe(replacementSensor);
+      expect(observatory.sensors).toEqual([replacementSensor, wideSensor]);
+    });
+
+    it('should allow replacing the full sensor list', () => {
+      const wideSensor = new ElectroOpicalSensor(200, 200, 20, 20, [], 'WideSensor');
+      const observatory = new Observatory(mockSite, mockGimbal, mockSensor);
+
+      observatory.sensors = [mockSensor, wideSensor];
+
+      expect(observatory.sensor).toBe(mockSensor);
+      expect(observatory.sensors).toEqual([mockSensor, wideSensor]);
+      expect(observatory._sensor).toBe(mockSensor);
     });
   });
 });

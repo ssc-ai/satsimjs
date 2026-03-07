@@ -1,5 +1,6 @@
 import { defined, Cartesian3 } from 'cesium';
 import { southEastZenithToAzEl } from '../dynamics/gimbal.js'
+import { getObservatorySensors, isSensorVisible } from '../objects/observatoryUtils.js'
 import { calculateTargetBrightness } from './photometry.js';
 
 /**
@@ -22,7 +23,7 @@ import { calculateTargetBrightness } from './photometry.js';
  * @param {Viewer} viewer - Viewer object containing simulation time information
  * @param {Array<Observatory>} observatories - Array of observatory objects to check visibility from
  * @param {SimObject} sat - Satellite object to check visibility for
- * @returns {Array<Object>} Array of visibility results, one per observatory
+ * @returns {Array<Object>} Array of visibility results, one per sensor
  * @returns {string} returns[].sensor - Name of the sensor/observatory
  * @returns {number} returns[].az - Azimuth angle in degrees (0-360)
  * @returns {number} returns[].el - Elevation angle in degrees (-90 to +90)
@@ -54,21 +55,11 @@ function getVisibility(universe, viewer, observatories, sat) {
   let visibility = []
   for (let observatory of observatories) {
     const localPos = new Cartesian3();
-    const field_of_regard = observatory.sensor.field_of_regard;
     // Base time (current)
     const t0 = viewer.clock.currentTime;
     sat.update(t0, universe)
     observatory.site.transformPointFromWorld(sat.worldPosition, localPos);
     let [az, el, r] = southEastZenithToAzEl(localPos)
-    let visible = false
-    if(defined(field_of_regard)) {
-      for(let i = 0; i < field_of_regard.length; i ++) {
-        const f = field_of_regard[i];
-        if(az > f.clock[0] && az < f.clock[1] && el > f.elevation[0] && el < f.elevation[1]) {
-          visible = true
-        }
-      }
-    }
     // Compute instantaneous angular rate on the sky (arcsec/s) relative to observer
     // Using omega = |r x v| / |r|^2 where r and v are relative position and velocity in world frame
     let angRateArcsecPerSec = undefined;
@@ -93,15 +84,20 @@ function getVisibility(universe, viewer, observatories, sat) {
     } catch (e) {
       // leave undefined on error
     }
-
-    visibility.push({...{
-      sensor: observatory.sensor.name,
-      az,
-      el,
-      r,
-      visible,
-      angRateArcsecPerSec
-    }, ...calculateTargetBrightness(observatory.site, sat, universe.sun) } )
+    const brightness = calculateTargetBrightness(observatory.site, sat, universe.sun)
+    getObservatorySensors(observatory).forEach((sensor) => {
+      visibility.push({
+        ...{
+          sensor: sensor.name,
+          az,
+          el,
+          r,
+          visible: isSensorVisible(sensor, az, el),
+          angRateArcsecPerSec
+        },
+        ...brightness
+      })
+    })
   }
   return visibility
 }
