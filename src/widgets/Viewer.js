@@ -372,6 +372,61 @@ function mixinViewer(viewer, universe, options) {
   // New Listeners
   ///////////////////
 
+  /**
+   * Resolve the active scene viewport aspect ratio.
+   *
+   * Drawing-buffer dimensions are preferred so the sensor frustum matches the
+   * rendered viewport even when CSS scaling differs from the backing buffer.
+   *
+   * @returns {number}
+   */
+  function getSceneAspectRatio() {
+    const dbw = Number(scene.context?.drawingBufferWidth)
+    const dbh = Number(scene.context?.drawingBufferHeight)
+    if (Number.isFinite(dbw) && Number.isFinite(dbh) && dbw > 0 && dbh > 0) {
+      return dbw / dbh
+    }
+
+    const viewport = scene.canvas ?? viewer.canvas ?? viewer._element
+    const width = Number(viewport?.clientWidth ?? viewport?.width)
+    const height = Number(viewport?.clientHeight ?? viewport?.height)
+    if (Number.isFinite(width) && Number.isFinite(height) && width > 0 && height > 0) {
+      return width / height
+    }
+
+    const aspectRatio = Number(camera.frustum?.aspectRatio)
+    return (Number.isFinite(aspectRatio) && aspectRatio > 0) ? aspectRatio : 1.0
+  }
+
+  /**
+   * Compute a Cesium camera frustum FOV that fully contains the sensor FOV.
+   *
+   * The returned FOV adapts to the current viewport aspect ratio so zooming a
+   * sensor updates the rendered view immediately without assuming a fixed
+   * horizontal or vertical frustum.
+   *
+   * @param {ElectroOpicalSensor|Object} sensor
+   * @param {number} aspectRatio
+   * @param {number} [paddingRatio=0.2]
+   * @returns {number}
+   */
+  function computeSensorCameraFov(sensor, aspectRatio, paddingRatio = 0.2) {
+    const safeAspectRatio = (Number.isFinite(aspectRatio) && aspectRatio > 0) ? aspectRatio : 1.0
+    const xFovRad = Math.max(Math.abs(CMath.toRadians(Number(sensor?.x_fov ?? 0))), 1e-6)
+    const yFovRad = Math.max(Math.abs(CMath.toRadians(Number(sensor?.y_fov ?? sensor?.x_fov ?? 0))), 1e-6)
+    let frustumFovRad
+
+    if (safeAspectRatio >= 1.0) {
+      const horizontalFromVertical = 2.0 * Math.atan(Math.tan(yFovRad * 0.5) * safeAspectRatio)
+      frustumFovRad = Math.max(xFovRad, horizontalFromVertical)
+    } else {
+      const verticalFromHorizontal = 2.0 * Math.atan(Math.tan(xFovRad * 0.5) / safeAspectRatio)
+      frustumFovRad = Math.max(yFovRad, verticalFromHorizontal)
+    }
+
+    return Math.min(frustumFovRad * (1.0 + paddingRatio), Math.PI - 1e-6)
+  }
+
   function updateCamera(scene, time) {
     const camera = viewer.camera
     ecrButton.checked = viewer.referenceFrameView === ReferenceFrame.FIXED
@@ -400,7 +455,8 @@ function mixinViewer(viewer, universe, options) {
         camera.position = new Cartesian3(0, 0, 0)
 
         Matrix4.multiply(universe.earth.worldToLocalTransform, viewer.trackedSensor.localToWorldTransform, transform)
-        camera.frustum.fov = CMath.toRadians(viewer.trackedSensor.x_fov + viewer.trackedSensor.x_fov * 0.2)
+        camera.frustum.aspectRatio = getSceneAspectRatio()
+        camera.frustum.fov = computeSensorCameraFov(viewer.trackedSensor, camera.frustum.aspectRatio)
       } else {
 
         // What's Up: 2D-only background (no 3D skybox or globe)

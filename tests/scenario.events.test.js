@@ -103,6 +103,62 @@ describe('Scenario event scheduling', () => {
     expect(gimbal.el).toBeCloseTo(17, 8)
   })
 
+  test('setSensorZoom defaults to the primary sensor and preserves tracking state', () => {
+    const trackedObject = { name: 'SAT' }
+    const primarySensor = { name: 'Primary', setZoomLevel: jest.fn() }
+    const secondarySensor = { name: 'Secondary', setZoomLevel: jest.fn() }
+    const gimbal = { trackMode: 'rate', trackObject: trackedObject, update: jest.fn() }
+    const site = { name: 'OBS', update: jest.fn() }
+    universe._observatories.push({
+      site,
+      gimbal,
+      sensor: primarySensor,
+      sensors: [primarySensor, secondarySensor]
+    })
+
+    scheduleScenarioEvents(universe, viewer, [
+      {
+        time: 0,
+        type: 'setSensorZoom',
+        observer: 'OBS',
+        zoomLevel: 0.75
+      }
+    ])
+
+    universe.update(start)
+    expect(primarySensor.setZoomLevel).toHaveBeenCalledWith(0.75)
+    expect(secondarySensor.setZoomLevel).not.toHaveBeenCalled()
+    expect(gimbal.trackMode).toBe('rate')
+    expect(gimbal.trackObject).toBe(trackedObject)
+  })
+
+  test('stepSensorZoom targets a named sensor on a multi-sensor observatory', () => {
+    const primarySensor = { name: 'Primary', stepZoomLevel: jest.fn() }
+    const narrowSensor = { name: 'Narrow', stepZoomLevel: jest.fn() }
+    const gimbal = { trackMode: 'fixed', trackObject: null, update: jest.fn() }
+    const site = { name: 'OBS', update: jest.fn() }
+    universe._observatories.push({
+      site,
+      gimbal,
+      sensor: primarySensor,
+      sensors: [primarySensor, narrowSensor]
+    })
+
+    scheduleScenarioEvents(universe, viewer, [
+      {
+        time: 0,
+        type: 'stepSensorZoom',
+        observer: 'OBS',
+        sensor: 'Narrow',
+        deltaZoomLevel: 0.125
+      }
+    ])
+
+    universe.update(start)
+    expect(narrowSensor.stepZoomLevel).toHaveBeenCalledWith(0.125)
+    expect(primarySensor.stepZoomLevel).not.toHaveBeenCalled()
+  })
+
   test('loadScenario adds events without clearing existing ones', () => {
     // Add a pre-existing event
     universe.scheduleEvent({ time: JulianDate.addSeconds(start, 100, new JulianDate()), type: 'foo', data: {} })

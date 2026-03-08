@@ -9,17 +9,14 @@ jest.mock('cesium', () => ({
 
 jest.mock('../src/engine/objects/SimObject.js', () => {
   const mockUpdate = jest.fn();
-  return jest.fn().mockImplementation((name) => {
-    const instance = {
-      name: name || 'MockSimObject',
-      _referenceFrame: null,
-      position: { x: 0, y: 0, z: 0 },
-      velocity: { x: 0, y: 0, z: 0 },
-      lastUpdate: null,
-      update: mockUpdate,
-      _update: jest.fn()
-    };
-    return instance;
+  return jest.fn().mockImplementation(function MockSimObject(name) {
+    this.name = name || 'MockSimObject';
+    this._referenceFrame = null;
+    this.position = { x: 0, y: 0, z: 0 };
+    this.velocity = { x: 0, y: 0, z: 0 };
+    this.lastUpdate = null;
+    this.update = mockUpdate;
+    this._update = jest.fn();
   });
 });
 
@@ -313,6 +310,74 @@ describe('ElectroOpicalSensor', () => {
 
       expect(sensor.y_ifov).toBe(9); // 90 / 10
       expect(sensor.x_ifov).toBe(9); // 90 / 10
+    });
+  });
+
+  describe('zoom support', () => {
+    it('keeps fixed-fov sensors unchanged when zoom is not configured', () => {
+      const sensor = new ElectroOpicalSensor(100, 200, 10, 20, [], 'FixedSensor');
+
+      expect(sensor.canZoom).toBe(false);
+      expect(sensor.zoomLevel).toBe(0);
+
+      sensor.setZoomLevel(1);
+      sensor.stepZoomLevel(-0.5);
+
+      expect(sensor.y_fov).toBe(10);
+      expect(sensor.x_fov).toBe(20);
+      expect(sensor.y_ifov).toBe(0.1);
+      expect(sensor.x_ifov).toBe(0.1);
+      expect(sensor.zoomLevel).toBe(0);
+    });
+
+    it('clamps zoom level and recomputes fov and ifov', () => {
+      const sensor = new ElectroOpicalSensor(100, 200, 10, 20, [], 'ZoomSensor', {
+        zoom: {
+          min_y_fov: 1,
+          max_y_fov: 10,
+          min_x_fov: 2,
+          max_x_fov: 20,
+          initial_zoom_level: 0.5
+        }
+      });
+
+      expect(sensor.canZoom).toBe(true);
+      expect(sensor.zoomLevel).toBe(0.5);
+      expect(sensor.y_fov).toBeCloseTo(5.5, 8);
+      expect(sensor.x_fov).toBeCloseTo(11, 8);
+      expect(sensor.y_ifov).toBeCloseTo(0.055, 8);
+      expect(sensor.x_ifov).toBeCloseTo(0.055, 8);
+
+      sensor.setZoomLevel(10);
+      expect(sensor.zoomLevel).toBe(1);
+      expect(sensor.y_fov).toBe(1);
+      expect(sensor.x_fov).toBe(2);
+
+      sensor.stepZoomLevel(-2);
+      expect(sensor.zoomLevel).toBe(0);
+      expect(sensor.y_fov).toBe(10);
+      expect(sensor.x_fov).toBe(20);
+    });
+
+    it('supports camelCase zoom aliases and derives initial zoom from current fov', () => {
+      const sensor = new ElectroOpicalSensor(100, 100, 4, 4, [], 'AliasZoomSensor', {
+        zoom: {
+          minYFov: 1,
+          maxYFov: 5,
+          minXFov: 1,
+          maxXFov: 5
+        }
+      });
+
+      expect(sensor.canZoom).toBe(true);
+      expect(sensor.zoomLevel).toBeCloseTo(0.25, 8);
+      expect(sensor.y_fov).toBeCloseTo(4, 8);
+      expect(sensor.x_fov).toBeCloseTo(4, 8);
+
+      sensor.stepZoomLevel(0.25);
+      expect(sensor.zoomLevel).toBeCloseTo(0.5, 8);
+      expect(sensor.y_fov).toBeCloseTo(3, 8);
+      expect(sensor.x_fov).toBeCloseTo(3, 8);
     });
   });
 

@@ -26,6 +26,7 @@ import {
   Viewer
 } from 'cesium'
 import Universe from '../engine/Universe.js'
+import { normalizeSensorZoomConfig } from '../engine/objects/observatoryUtils.js'
 
 const DEFAULT_MODEL_MINIMUM_PIXEL_SIZE = 64
 const DEFAULT_MODEL_MAXIMUM_SCALE = 20000
@@ -144,9 +145,10 @@ function resolveSensorMaxDistance(input) {
  * Normalize a scenario sensor entry into the canonical observatory sensor shape.
  *
  * @param {Object} sensor
- * @returns {{name?: string, height:number, width:number, y_fov:number, x_fov:number, field_of_regard:Array, color?: any}}
+ * @returns {{name?: string, height:number, width:number, y_fov:number, x_fov:number, field_of_regard:Array, color?: any, zoom?: Object}}
  */
 function resolveScenarioSensorConfig(sensor) {
+  const zoom = normalizeSensorZoomConfig(sensor.zoom)
   return {
     ...(sensor.name != null ? { name: String(sensor.name) } : {}),
     height: Number(sensor.height ?? sensor.sensor_height),
@@ -154,7 +156,8 @@ function resolveScenarioSensorConfig(sensor) {
     y_fov: Number(sensor.y_fov ?? 5),
     x_fov: Number(sensor.x_fov ?? 5),
     field_of_regard: sensor.field_of_regard ?? [],
-    ...(sensor.color != null ? { color: sensor.color } : {})
+    ...(sensor.color != null ? { color: sensor.color } : {}),
+    ...(zoom ? { zoom } : {})
   }
 }
 
@@ -381,7 +384,7 @@ function createAirVehicleModelOrientationProperty(vehicle, universe, headingOffs
  * @param {Array} [obs.field_of_regard=[]] - Optional field of regard.
  * @param {Array<Object>} [obs.sensors] - Optional multi-sensor definitions sharing one gimbal.
  *   Each entry may include `name`, `height`/`sensor_height`, `width`/`sensor_width`,
- *   `x_fov`, `y_fov`, `field_of_regard`, and optional `color`.
+ *   `x_fov`, `y_fov`, `field_of_regard`, optional `zoom`, and optional `color`.
  * @param {Object<string, number|Object>} [obs.gimbal_slew_rates] - Optional per-axis slew settings.
  * @param {number|string} [obs.sensor_max_distance] - Optional fallback sensor range in meters when idle.
  * @param {string|Object} [obs.model] - Optional 3D model URI or Cesium model options.
@@ -393,6 +396,7 @@ export function addObservatory(universe, viewer, obs) {
   }
 
   const sensors = resolveScenarioObservatorySensors(obs)
+  const zoom = normalizeSensorZoomConfig(obs.zoom)
   const o = universe.addGroundElectroOpticalObservatory({
     name: String(obs.name),
     latitude: Number(obs.latitude),
@@ -404,6 +408,7 @@ export function addObservatory(universe, viewer, obs) {
     y_fov: Number(obs.y_fov ?? 5),
     x_fov: Number(obs.x_fov ?? 5),
     field_of_regard: obs.field_of_regard ?? [],
+    ...(zoom ? { zoom } : {}),
     ...(sensors ? { sensors } : {}),
     gimbalSlewRates: resolveGimbalSlewRates(
       obs.gimbal_slew_rates ??
@@ -742,6 +747,7 @@ export function addScenarioObject(universe, viewer, obj) {
         y_fov: obj.y_fov,
         x_fov: obj.x_fov,
         field_of_regard: obj.field_of_regard,
+        zoom: obj.zoom,
         sensors: obj.sensors,
         gimbal_slew_rates: (obj.gimbal_slew_rates != null ? obj.gimbal_slew_rates : obj.gimbalSlewRates),
         sensor_max_distance: (
@@ -811,6 +817,10 @@ export function addScenarioObject(universe, viewer, obj) {
  *   Steps one or more gimbal axis targets by delta degrees.
  * - type: 'setGimbalAxes' with {observer, axes:{axisName:targetDeg}}
  *   Sets one or more gimbal axis targets in degrees.
+ * - type: 'setSensorZoom' with {observer, sensor?, zoomLevel}
+ *   Sets a sensor zoom level where 0 is widest and 1 is narrowest.
+ * - type: 'stepSensorZoom' with {observer, sensor?, deltaZoomLevel}
+ *   Adjusts a sensor zoom level by a normalized delta.
  *
  * @param {Universe} universe - The SatSim Universe instance.
  * @param {Viewer} viewer - The SatSim viewer.

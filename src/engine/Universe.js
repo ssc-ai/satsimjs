@@ -9,7 +9,7 @@ import TwoBodySatellite from "./objects/TwoBodySatellite.js";
 import AirVehicle from "./objects/AirVehicle.js";
 import SimObject from "./objects/SimObject.js";
 import Observatory from "./objects/Observatory.js";
-import { getObservatorySensors } from "./objects/observatoryUtils.js";
+import { getObservatorySensors, normalizeSensorZoomConfig } from "./objects/observatoryUtils.js";
 import { Cartesian3, JulianDate, defined } from "cesium";
 import EventQueue from "./event/EventQueue.js";
 
@@ -95,12 +95,43 @@ function resolveAirVehicleForEvent(universe, ev) {
   return undefined
 }
 
+/**
+ * Find an observatory by its site name.
+ *
+ * @param {Universe} universe
+ * @param {string} observerName
+ * @returns {Observatory|undefined}
+ */
 function findObservatoryByName(universe, observerName) {
   if (!defined(observerName)) return undefined
   const arr = universe?._observatories || []
   for (let i = 0; i < arr.length; i++) {
     const obs = arr[i]
     if (obs?.site?.name === observerName) return obs
+  }
+  return undefined
+}
+
+/**
+ * Resolve a target sensor within an observatory.
+ *
+ * When no sensor name is provided, the primary sensor is returned to preserve
+ * legacy single-sensor event behavior.
+ *
+ * @param {Observatory|Object|undefined} observatory
+ * @param {string|undefined} sensorName
+ * @returns {Object|undefined}
+ */
+function findObservatorySensor(observatory, sensorName) {
+  const sensors = getObservatorySensors(observatory)
+  const normalizedSensorName = String(sensorName ?? '').trim()
+  if (!normalizedSensorName) {
+    return observatory?.sensor ?? sensors[0]
+  }
+  for (let i = 0; i < sensors.length; i++) {
+    if (sensors[i]?.name === normalizedSensorName) {
+      return sensors[i]
+    }
   }
   return undefined
 }
@@ -125,7 +156,7 @@ function defaultObservatorySensorName(observatoryName, sensorIndex = 0) {
  * @param {Object|undefined} entry
  * @param {string} observatoryName
  * @param {number} [sensorIndex=0]
- * @returns {{height:number, width:number, y_fov:number, x_fov:number, field_of_regard:Array, color:any, name:string}}
+ * @returns {{height:number, width:number, y_fov:number, x_fov:number, field_of_regard:Array, color:any, zoom:Object|undefined, name:string}}
  */
 function normalizeObservatorySensorConfig(entry, observatoryName, sensorIndex = 0) {
   const sensorName = String(entry?.name ?? '').trim() || defaultObservatorySensorName(observatoryName, sensorIndex)
@@ -136,6 +167,7 @@ function normalizeObservatorySensorConfig(entry, observatoryName, sensorIndex = 
     x_fov: Number(entry?.x_fov ?? 5),
     field_of_regard: entry?.field_of_regard ?? [],
     color: entry?.color,
+    zoom: normalizeSensorZoomConfig(entry?.zoom),
     name: sensorName
   }
 }
@@ -170,6 +202,7 @@ function normalizeGroundObservatoryConfig(nameOrConfig, latitude, longitude, alt
         y_fov: config.y_fov,
         x_fov: config.x_fov,
         field_of_regard: config.field_of_regard,
+        zoom: config.zoom,
         name: config.sensor_name
       }]
 
@@ -269,6 +302,8 @@ class Universe {
 
     // Register default event handlers
     // - trackObject: { observer: siteName, target: objectName }
+    // - setSensorZoom: { observer: siteName, sensor?: sensorName, zoomLevel }
+    // - stepSensorZoom: { observer: siteName, sensor?: sensorName, deltaZoomLevel }
     this._events.registerHandler('trackObject', (universe, ev) => {
       const observerName = ev?.data?.observer ?? ev?.observer
       const dataHasTarget = ev?.data && Object.prototype.hasOwnProperty.call(ev.data, 'target')
@@ -377,6 +412,45 @@ class Universe {
           gimbal[axis] = targetDeg
         }
       })
+    })
+
+    this._events.registerHandler('setSensorZoom', (universe, ev) => {
+      const data = ev?.data ?? {}
+      const observerName = data.observer ?? ev?.observer
+      if (!observerName) return
+
+      const observatory = findObservatoryByName(universe, observerName)
+      if (!observatory) return
+
+      const sensorName = data.sensor ?? data.sensor_name ?? ev?.sensor ?? ev?.sensor_name
+      const sensor = findObservatorySensor(observatory, sensorName)
+      if (!sensor || typeof sensor.setZoomLevel !== 'function') return
+
+      const zoomLevel = Number(data.zoomLevel ?? data.zoom_level ?? ev?.zoomLevel ?? ev?.zoom_level)
+      if (!Number.isFinite(zoomLevel)) return
+      sensor.setZoomLevel(zoomLevel)
+    })
+
+    this._events.registerHandler('stepSensorZoom', (universe, ev) => {
+      const data = ev?.data ?? {}
+      const observerName = data.observer ?? ev?.observer
+      if (!observerName) return
+
+      const observatory = findObservatoryByName(universe, observerName)
+      if (!observatory) return
+
+      const sensorName = data.sensor ?? data.sensor_name ?? ev?.sensor ?? ev?.sensor_name
+      const sensor = findObservatorySensor(observatory, sensorName)
+      if (!sensor || typeof sensor.stepZoomLevel !== 'function') return
+
+      const deltaZoomLevel = Number(
+        data.deltaZoomLevel ??
+        data.delta_zoom_level ??
+        ev?.deltaZoomLevel ??
+        ev?.delta_zoom_level
+      )
+      if (!Number.isFinite(deltaZoomLevel) || deltaZoomLevel === 0) return
+      sensor.stepZoomLevel(deltaZoomLevel)
     })
 
     const applyAirVehicleManeuver = (universe, ev) => {
@@ -637,14 +711,17 @@ class Universe {
     this.addObject(gimbal, false)
 
     const sensors = config.sensors.map((sensorConfig) => {
-      const sensor = new ElectroOpicalSensor(
+      const sensorArgs = [
         sensorConfig.height,
         sensorConfig.width,
         sensorConfig.y_fov,
         sensorConfig.x_fov,
         sensorConfig.field_of_regard,
         sensorConfig.name
-      )
+      ]
+      const sensor = defined(sensorConfig.zoom)
+        ? new ElectroOpicalSensor(...sensorArgs, { zoom: sensorConfig.zoom })
+        : new ElectroOpicalSensor(...sensorArgs)
       sensor.maxRange = gimbal.maxRange
       if (defined(sensorConfig.color)) {
         sensor.color = sensorConfig.color

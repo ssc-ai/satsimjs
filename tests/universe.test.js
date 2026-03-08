@@ -809,6 +809,49 @@ describe('Universe', () => {
       expect(result.sensor.name).toBe('HSV Laser Test Range Sensor');
       expect(result.sensors[1].color).toBe('#ff0000');
     });
+
+    test('should pass zoom options through to zoom-capable sensors', () => {
+      universe.addGroundElectroOpticalObservatory({
+        name: 'Zoom Observatory',
+        latitude: 34.6707,
+        longitude: -86.6508,
+        altitude: 5,
+        sensors: [
+          {
+            height: 2048,
+            width: 2048,
+            y_fov: 5,
+            x_fov: 5,
+            field_of_regard: [],
+            zoom: {
+              min_x_fov: 0.05,
+              max_x_fov: 5,
+              min_y_fov: 0.05,
+              max_y_fov: 5,
+              initial_zoom_level: 0.25
+            }
+          }
+        ]
+      });
+
+      expect(ElectroOpicalSensor).toHaveBeenCalledWith(
+        2048,
+        2048,
+        5,
+        5,
+        [],
+        'Zoom Observatory Sensor',
+        {
+          zoom: {
+            min_x_fov: 0.05,
+            max_x_fov: 5,
+            min_y_fov: 0.05,
+            max_y_fov: 5,
+            initial_zoom_level: 0.25
+          }
+        }
+      );
+    });
   });
 
   describe('update', () => {

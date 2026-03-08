@@ -82,6 +82,14 @@ jest.mock('cesium', () => {
 
   const colorStub = makeColor('default')
 
+  class Matrix4 {}
+
+  Matrix4.multiply = jest.fn((left, right, result) => result ?? new Matrix4())
+  Matrix4.multiplyByPoint = jest.fn((transform, point, result) => result ?? point)
+  Matrix4.multiplyByPointAsVector = jest.fn((transform, point, result) => result ?? point)
+  Matrix4.fromRotationTranslation = jest.fn()
+  Matrix4.clone = jest.fn((value) => value)
+
   const Color = {
     WHITE: colorStub,
     WHEAT: colorStub,
@@ -117,11 +125,7 @@ jest.mock('cesium', () => {
     },
     Cartesian2: class Cartesian2 {},
     Cartesian3,
-    Matrix4: {
-      multiply: jest.fn(),
-      fromRotationTranslation: jest.fn(),
-      clone: jest.fn((value) => value)
-    },
+    Matrix4,
     Color,
     SceneMode: { SCENE3D: 3 },
     ReferenceFrame: { FIXED: 'FIXED', INERTIAL: 'INERTIAL' },
@@ -248,7 +252,7 @@ function makeViewerStub() {
       context: {}
     },
     camera: {
-      frustum: {},
+      frustum: { aspectRatio: 1, fov: 0 },
       direction: {},
       positionWC: {},
       position: {},
@@ -259,7 +263,9 @@ function makeViewerStub() {
       right: {},
       transform: {},
       setView: jest.fn(),
-      lookAtTransform: jest.fn()
+      lookAtTransform: jest.fn(),
+      flyHome: jest.fn(),
+      _setTransform: jest.fn()
     },
     _selectionIndicator: {},
     _eventHelper: { add: jest.fn() },
@@ -381,5 +387,51 @@ describe('Viewer observatory behavior', () => {
     const fovColor = SensorFieldOfViewVisualizer.mock.calls[0][5]
     expect(forColor?.label).toBe('#ff0000')
     expect(fovColor?.label).toBe('#ff0000')
+  })
+
+  test('updates sensor-view camera frustum when sensor zoom changes', () => {
+    const viewer = makeViewerStub()
+    viewer.scene.context = {
+      drawingBufferWidth: 1600,
+      drawingBufferHeight: 900
+    }
+
+    const universe = {
+      earth: {
+        update: jest.fn(),
+        worldToLocalTransform: {}
+      },
+      _trackables: []
+    }
+
+    mixinViewer(viewer, universe, {
+      infoBox2: false,
+      toolbar2: false,
+      showNightLayer: false,
+      showWeatherLayer: false,
+      enableObjectSearch: false
+    })
+
+    const updateCamera = viewer.scene.preRender.addEventListener.mock.calls[0][0]
+    const sensor = {
+      name: 'HSV Zoom Sensor',
+      x_fov: 5,
+      y_fov: 5,
+      update: jest.fn(),
+      localToWorldTransform: {},
+      parent: { parent: { localToWorldTransform: {} } },
+      visualizer: {}
+    }
+
+    viewer.setCameraMode('sensor', sensor)
+    updateCamera(viewer.scene, {})
+    const initialFov = viewer.camera.frustum.fov
+
+    sensor.x_fov = 0.05
+    sensor.y_fov = 0.05
+    updateCamera(viewer.scene, {})
+
+    expect(viewer.camera.frustum.aspectRatio).toBeCloseTo(1600 / 900, 8)
+    expect(viewer.camera.frustum.fov).toBeLessThan(initialFov)
   })
 })

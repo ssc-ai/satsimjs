@@ -137,6 +137,36 @@ describe('scenario observatory model support', () => {
     expect(config.sensorMaxDistance).toBe(7500)
   })
 
+  test('normalizes single-sensor zoom config aliases into observatory creation', () => {
+    addScenarioObject(universe, viewer, {
+      type: 'GroundEOObservatory',
+      name: 'HSV Laser Test Range',
+      latitude: 34.6707,
+      longitude: -86.6508,
+      altitude: 5,
+      height: 2048,
+      width: 2048,
+      y_fov: 5,
+      x_fov: 5,
+      zoom: {
+        minXFov: 0.05,
+        max_x_fov: 5,
+        minYFov: 0.05,
+        max_y_fov: 5,
+        initialZoomLevel: 0.25
+      }
+    })
+
+    const [config] = universe.addGroundElectroOpticalObservatory.mock.calls[0]
+    expect(config.zoom).toEqual({
+      min_x_fov: 0.05,
+      max_x_fov: 5,
+      min_y_fov: 0.05,
+      max_y_fov: 5,
+      initial_zoom_level: 0.25
+    })
+  })
+
   test('forwards sensors array into observatory creation and preserves legacy aliases', () => {
     addScenarioObject(universe, viewer, {
       type: 'GroundEOObservatory',
@@ -149,7 +179,15 @@ describe('scenario observatory model support', () => {
       y_fov: 1,
       x_fov: 1,
       sensors: [
-        { name: 'HSV Narrow', height: 2048, width: 2048, y_fov: 1, x_fov: 1, field_of_regard: [] },
+        {
+          name: 'HSV Narrow',
+          height: 2048,
+          width: 2048,
+          y_fov: 1,
+          x_fov: 1,
+          field_of_regard: [],
+          zoom: { minXFov: 0.05, maxXFov: 1, minYFov: 0.05, maxYFov: 1 }
+        },
         { name: 'HSV Wide', sensor_height: 1024, sensor_width: 1024, y_fov: 8, x_fov: 8, field_of_regard: [], color: '#ff0000' }
       ]
     })
@@ -158,7 +196,15 @@ describe('scenario observatory model support', () => {
     expect(config.height).toBe(2048)
     expect(config.width).toBe(2048)
     expect(config.sensors).toEqual([
-      { name: 'HSV Narrow', height: 2048, width: 2048, y_fov: 1, x_fov: 1, field_of_regard: [] },
+      {
+        name: 'HSV Narrow',
+        height: 2048,
+        width: 2048,
+        y_fov: 1,
+        x_fov: 1,
+        field_of_regard: [],
+        zoom: { min_x_fov: 0.05, max_x_fov: 1, min_y_fov: 0.05, max_y_fov: 1 }
+      },
       { name: 'HSV Wide', height: 1024, width: 1024, y_fov: 8, x_fov: 8, field_of_regard: [], color: '#ff0000' }
     ])
   })

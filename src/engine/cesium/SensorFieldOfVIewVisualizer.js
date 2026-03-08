@@ -21,10 +21,10 @@ class SensorFieldOfViewVisualizer extends CompountElementVisualizer {
           return Cartesian3.clone(new Cartesian3(range, range, range), result)
         }, false),
         innerRadii: new Cartesian3(CMath.EPSILON1, CMath.EPSILON1, CMath.EPSILON1), // Cesium will crash if innerRadii is small and radii is large
-        minimumClock: CMath.toRadians(-sensor.x_fov / 2),
-        maximumClock: CMath.toRadians(sensor.x_fov / 2),
-        minimumCone: CMath.toRadians(90 - sensor.y_fov / 2),
-        maximumCone: CMath.toRadians(90 + sensor.y_fov / 2),
+        minimumClock: new CallbackProperty(() => CMath.toRadians(-sensor.x_fov / 2), false),
+        maximumClock: new CallbackProperty(() => CMath.toRadians(sensor.x_fov / 2), false),
+        minimumCone: new CallbackProperty(() => CMath.toRadians(90 - sensor.y_fov / 2), false),
+        maximumCone: new CallbackProperty(() => CMath.toRadians(90 + sensor.y_fov / 2), false),
         material: this._color.withAlpha(0.25),
         outlineColor: this._color.withAlpha(0.5),
         outline: true,
