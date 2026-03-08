@@ -198,6 +198,7 @@ describe('scenario observatory model support', () => {
     expect(config.sensors).toEqual([
       {
         name: 'HSV Narrow',
+        type: 'ElectroOpticalSensor',
         height: 2048,
         width: 2048,
         y_fov: 1,
@@ -205,7 +206,44 @@ describe('scenario observatory model support', () => {
         field_of_regard: [],
         zoom: { min_x_fov: 0.05, max_x_fov: 1, min_y_fov: 0.05, max_y_fov: 1 }
       },
-      { name: 'HSV Wide', height: 1024, width: 1024, y_fov: 8, x_fov: 8, field_of_regard: [], color: '#ff0000' }
+      { name: 'HSV Wide', type: 'ElectroOpticalSensor', height: 1024, width: 1024, y_fov: 8, x_fov: 8, field_of_regard: [], color: '#ff0000' }
+    ])
+  })
+
+  test('normalizes laser payload entries inside observatory sensors', () => {
+    addScenarioObject(universe, viewer, {
+      type: 'GroundEOObservatory',
+      name: 'HSV Laser Test Range',
+      latitude: 34.6707,
+      longitude: -86.6508,
+      altitude: 5,
+      sensors: [
+        {
+          type: 'Laser',
+          name: 'HSV HEL',
+          beam_diameter: 0.05,
+          power: 50000,
+          active: true,
+          max_range: 6000,
+          color: '#ff0000'
+        }
+      ]
+    })
+
+    const [config] = universe.addGroundElectroOpticalObservatory.mock.calls[0]
+    expect(config.sensors).toEqual([
+      {
+        type: 'Laser',
+        name: 'HSV HEL',
+        beamDiameter: 0.05,
+        power: 50000,
+        active: true,
+        maxRange: 6000,
+        y_fov: 0.001,
+        x_fov: 0.001,
+        field_of_regard: [],
+        color: '#ff0000'
+      }
     ])
   })
 

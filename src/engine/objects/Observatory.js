@@ -6,8 +6,8 @@ import SimObject from "./SimObject.js";
  * Normalize observatory sensor input into an array while preserving the input
  * objects by reference.
  *
- * @param {ElectroOpicalSensor|ElectroOpicalSensor[]|undefined} input
- * @returns {Array<ElectroOpicalSensor|undefined>}
+ * @param {ElectroOpicalSensor|import('./Laser.js').default|Array<ElectroOpicalSensor|import('./Laser.js').default>|undefined} input
+ * @returns {Array<ElectroOpicalSensor|import('./Laser.js').default|undefined>}
  */
 function normalizeSensors(input) {
     if (Array.isArray(input)) {
@@ -29,7 +29,7 @@ class Observatory {
      * Creates an instance of Observatory.
      * @param {SimObject} site - The site object.
      * @param {Gimbal} gimbal - The gimbal object.
-     * @param {ElectroOpicalSensor|ElectroOpicalSensor[]} sensor - The sensor object(s).
+     * @param {ElectroOpicalSensor|import('./Laser.js').default|Array<ElectroOpicalSensor|import('./Laser.js').default>} sensor - The payload object(s).
      */
     constructor(site, gimbal, sensor) {
         this._site = site;
@@ -70,16 +70,16 @@ class Observatory {
     }
 
     /**
-     * Gets the sensor objects.
-     * @returns {ElectroOpicalSensor[]} The sensor objects.
+     * Gets the payload objects.
+     * @returns {Array<ElectroOpicalSensor|import('./Laser.js').default>} The payload objects.
      */
     get sensors() {
         return this._sensors;
     }
 
     /**
-     * Sets the sensor objects.
-     * @param {ElectroOpicalSensor|ElectroOpicalSensor[]} value - The sensor object(s).
+     * Sets the payload objects.
+     * @param {ElectroOpicalSensor|import('./Laser.js').default|Array<ElectroOpicalSensor|import('./Laser.js').default>} value - The payload object(s).
      */
     set sensors(value) {
         const sensors = normalizeSensors(value);
@@ -88,16 +88,16 @@ class Observatory {
     }
 
     /**
-     * Gets the primary sensor object.
-     * @returns {SimObject} The primary sensor object.
+     * Gets the primary payload object.
+     * @returns {SimObject} The primary payload object.
      */
     get sensor() {
         return this._sensor;
     }
 
     /**
-     * Sets the primary sensor object.
-     * @param {ElectroOpicalSensor} value - The sensor object.
+     * Sets the primary payload object.
+     * @param {ElectroOpicalSensor|import('./Laser.js').default} value - The payload object.
      */
     set sensor(value) {
         const sensors = Array.isArray(this._sensors) ? this._sensors.slice() : [];

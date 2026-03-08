@@ -1,6 +1,6 @@
 /**
- * Return the concrete sensor list for an observatory, preserving support for
- * both legacy single-sensor observatories and multi-sensor observatories.
+ * Return the concrete payload list for an observatory, preserving support for
+ * both legacy single-sensor observatories and multi-payload observatories.
  *
  * Undefined sensor entries are filtered out so callers can safely iterate the
  * returned list without additional guards.

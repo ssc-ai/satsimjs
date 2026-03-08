@@ -72,6 +72,18 @@ function numberOr(value, fallback = 0) {
   return Number.isFinite(num) ? num : fallback
 }
 
+function booleanOr(value, fallback = false) {
+  if (value === undefined || value === null) {
+    return fallback
+  }
+  if (typeof value === 'string') {
+    const normalized = value.trim().toLowerCase()
+    if (normalized === 'true') return true
+    if (normalized === 'false') return false
+  }
+  return Boolean(value)
+}
+
 function resolveGimbalAxisSlewRate(entry) {
   let maxRateDegPerSec
   let maxAccelDegPerSec2
@@ -141,15 +153,44 @@ function resolveSensorMaxDistance(input) {
   return (Number.isFinite(meters) && meters > 0) ? meters : undefined
 }
 
+function resolveCollisionRadius(input) {
+  const radius = Number(
+    input.collisionRadius ??
+    input.collision_radius_m ??
+    input.collisionRadiusM ??
+    input.collision_radius ??
+    input.collisionRadiusMeters
+  )
+  return (Number.isFinite(radius) && radius > 0) ? radius : undefined
+}
+
 /**
- * Normalize a scenario sensor entry into the canonical observatory sensor shape.
+ * Normalize a scenario observatory payload entry into the canonical runtime
+ * shape expected by observatory construction.
  *
  * @param {Object} sensor
- * @returns {{name?: string, height:number, width:number, y_fov:number, x_fov:number, field_of_regard:Array, color?: any, zoom?: Object}}
+ * @returns {Object}
  */
 function resolveScenarioSensorConfig(sensor) {
+  const payloadType = String(sensor?.type ?? '').trim().toLowerCase()
+  if (payloadType === 'laser') {
+    return {
+      type: 'Laser',
+      ...(sensor.name != null ? { name: String(sensor.name) } : {}),
+      beamDiameter: Number(sensor.beamDiameter ?? sensor.beam_diameter),
+      power: Number(sensor.power),
+      active: booleanOr(sensor.active, false),
+      maxRange: Number(sensor.maxRange ?? sensor.max_range),
+      y_fov: Number(sensor.y_fov ?? 0.01),
+      x_fov: Number(sensor.x_fov ?? 0.01),
+      field_of_regard: sensor.field_of_regard ?? [],
+      ...(sensor.color != null ? { color: sensor.color } : {})
+    }
+  }
+
   const zoom = normalizeSensorZoomConfig(sensor.zoom)
   return {
+    type: 'ElectroOpticalSensor',
     ...(sensor.name != null ? { name: String(sensor.name) } : {}),
     height: Number(sensor.height ?? sensor.sensor_height),
     width: Number(sensor.width ?? sensor.sensor_width),
@@ -162,7 +203,7 @@ function resolveScenarioSensorConfig(sensor) {
 }
 
 /**
- * Normalize optional multi-sensor observatory definitions from a scenario entry.
+ * Normalize optional multi-payload observatory definitions from a scenario entry.
  *
  * @param {Object} obs
  * @returns {Array<Object>|undefined}
@@ -382,9 +423,12 @@ function createAirVehicleModelOrientationProperty(vehicle, universe, headingOffs
  * @param {number|string} [obs.y_fov=5] - Sensor FOV in Y (deg).
  * @param {number|string} [obs.x_fov=5] - Sensor FOV in X (deg).
  * @param {Array} [obs.field_of_regard=[]] - Optional field of regard.
- * @param {Array<Object>} [obs.sensors] - Optional multi-sensor definitions sharing one gimbal.
- *   Each entry may include `name`, `height`/`sensor_height`, `width`/`sensor_width`,
+ * @param {Array<Object>} [obs.sensors] - Optional multi-payload definitions sharing one gimbal.
+ *   EO entries may include `name`, `height`/`sensor_height`, `width`/`sensor_width`,
  *   `x_fov`, `y_fov`, `field_of_regard`, optional `zoom`, and optional `color`.
+ *   Laser entries use `type: 'Laser'` plus `beam_diameter`, `power`, optional
+ *   `active`, optional `max_range`, and optional placeholder `x_fov`, `y_fov`,
+ *   `field_of_regard`, and `color`.
  * @param {Object<string, number|Object>} [obs.gimbal_slew_rates] - Optional per-axis slew settings.
  * @param {number|string} [obs.sensor_max_distance] - Optional fallback sensor range in meters when idle.
  * @param {string|Object} [obs.model] - Optional 3D model URI or Cesium model options.
@@ -538,6 +582,13 @@ export function addAirVehicle(universe, viewer, entry, idx = 0) {
     epoch,
     true
   )
+
+  const collisionRadius = resolveCollisionRadius(entry)
+  if (Number.isFinite(collisionRadius)) {
+    v.collisionRadius = collisionRadius
+    v.collision_radius_m = collisionRadius
+    v.collisionRadiusM = collisionRadius
+  }
 
   const color = resolveScenarioColor(entry.color)
   const headingDisplay = numberOr(heading, defined(v) ? v.heading : 0)
@@ -798,6 +849,11 @@ export function addScenarioObject(universe, viewer, obj) {
         speed: obj.speed,
         vertical_speed: obj.vertical_speed,
         climb_rate: obj.climb_rate,
+        collision_radius_m: obj.collision_radius_m,
+        collisionRadius: obj.collisionRadius,
+        collisionRadiusM: obj.collisionRadiusM,
+        collision_radius: obj.collision_radius,
+        collisionRadiusMeters: obj.collisionRadiusMeters,
         epoch: obj.epoch,
         color: obj.color,
         model: obj.model,
@@ -821,6 +877,8 @@ export function addScenarioObject(universe, viewer, obj) {
  *   Sets a sensor zoom level where 0 is widest and 1 is narrowest.
  * - type: 'stepSensorZoom' with {observer, sensor?, deltaZoomLevel}
  *   Adjusts a sensor zoom level by a normalized delta.
+ * - type: 'setDirectedEnergyActive' with {observer, device|sensor, active}
+ *   Enables or disables a named laser payload without changing gimbal tracking.
  *
  * @param {Universe} universe - The SatSim Universe instance.
  * @param {Viewer} viewer - The SatSim viewer.

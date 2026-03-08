@@ -6,6 +6,7 @@ import SGP4Satellite from '../src/engine/objects/SGP4Satellite.js';
 import EarthGroundStation from '../src/engine/objects/EarthGroundStation.js';
 import AzElGimbal from '../src/engine/objects/AzElGimbal.js';
 import ElectroOpicalSensor from '../src/engine/objects/ElectroOpticalSensor.js';
+import Laser from '../src/engine/objects/Laser.js';
 import LagrangeInterpolatedObject from '../src/engine/objects/LagrangeInterpolatedObject.js';
 import TwoBodySatellite from '../src/engine/objects/TwoBodySatellite.js';
 import AirVehicle from '../src/engine/objects/AirVehicle.js';
@@ -20,6 +21,7 @@ jest.mock('../src/engine/objects/SGP4Satellite.js');
 jest.mock('../src/engine/objects/EarthGroundStation.js');
 jest.mock('../src/engine/objects/AzElGimbal.js');
 jest.mock('../src/engine/objects/ElectroOpticalSensor.js');
+jest.mock('../src/engine/objects/Laser.js');
 jest.mock('../src/engine/objects/LagrangeInterpolatedObject.js');
 jest.mock('../src/engine/objects/TwoBodySatellite.js');
 jest.mock('../src/engine/objects/AirVehicle.js');
@@ -575,6 +577,7 @@ describe('Universe', () => {
     let mockSite;
     let mockGimbal;
     let mockSensor;
+    let mockLaser;
 
     beforeEach(() => {
       mockSite = {
@@ -596,6 +599,14 @@ describe('Universe', () => {
         update: jest.fn()
       };
 
+      mockLaser = {
+        name: 'ObservatoryLaser',
+        type: 'Laser',
+        active: false,
+        attach: jest.fn(),
+        update: jest.fn()
+      };
+
       EarthGroundStation.mockImplementation((lat, lon, alt, name) => {
         return { ...mockSite, name: name };
       });
@@ -604,6 +615,16 @@ describe('Universe', () => {
       });
       ElectroOpicalSensor.mockImplementation((h, w, y, x, for_, name) => {
         return { ...mockSensor, name: name };
+      });
+      Laser.mockImplementation((options = {}) => {
+        return {
+          ...mockLaser,
+          name: options.name ?? mockLaser.name,
+          maxRange: options.maxRange,
+          beamDiameter: options.beamDiameter,
+          power: options.power,
+          active: options.active ?? false
+        };
       });
       Observatory.mockImplementation((site, gimbal, sensors) => {
         const sensorList = Array.isArray(sensors) ? sensors : [sensors]
@@ -852,6 +873,54 @@ describe('Universe', () => {
         }
       );
     });
+
+    test('should instantiate mixed EO and laser payloads by type', () => {
+      const result = universe.addGroundElectroOpticalObservatory({
+        name: 'Laser Observatory',
+        latitude: 34.6707,
+        longitude: -86.6508,
+        altitude: 5,
+        sensorMaxDistance: 7500,
+        sensors: [
+          { height: 2048, width: 2048, y_fov: 1, x_fov: 1, field_of_regard: [] },
+          { type: 'Laser', name: 'HSV HEL', beamDiameter: 0.05, power: 50000, active: true, maxRange: 6000, color: '#ff0000' }
+        ]
+      })
+
+      expect(ElectroOpicalSensor).toHaveBeenCalledTimes(1)
+      expect(Laser).toHaveBeenCalledTimes(1)
+      expect(Laser).toHaveBeenCalledWith({
+        name: 'HSV HEL',
+        beamDiameter: 0.05,
+        power: 50000,
+        active: true,
+        maxRange: 6000,
+        y_fov: 5,
+        x_fov: 5,
+        field_of_regard: [],
+        color: '#ff0000'
+      })
+      expect(result.sensors).toHaveLength(2)
+      expect(result.sensors[1].type).toBe('Laser')
+      expect(result.sensors[1].color).toBe('#ff0000')
+      expect(result.sensors[1].attach).toHaveBeenCalledWith(expect.objectContaining({ name: 'Laser Observatory Gimbal' }))
+    })
+
+    test('should resolve laser maxRange from payload before observatory fallback', () => {
+      const result = universe.addGroundElectroOpticalObservatory({
+        name: 'Laser Range Observatory',
+        latitude: 34.6707,
+        longitude: -86.6508,
+        altitude: 5,
+        sensorMaxDistance: 7500,
+        sensors: [
+          { type: 'Laser', name: 'HSV HEL', beamDiameter: 0.05, power: 50000, maxRange: 6000 }
+        ]
+      })
+
+      expect(result.sensors[0].maxRange).toBe(6000)
+      expect(universe.gimbals[0].maxRange).toBe(7500)
+    })
   });
 
   describe('update', () => {
@@ -1024,6 +1093,30 @@ describe('Universe', () => {
       expect(mockEarth.update).toHaveBeenCalledTimes(3);
       expect(mockSun.update).toHaveBeenCalledTimes(3);
       expect(trackableObject1.update).toHaveBeenCalledTimes(3);
+    });
+
+    test('should toggle a laser payload through the directed-energy event handler without changing tracking', () => {
+      const trackedObject = { name: 'Drone', update: jest.fn() }
+      const laser = { name: 'HSV HEL', type: 'Laser', active: false, update: jest.fn() }
+      const observatory = {
+        site: { name: 'OBS', update: jest.fn() },
+        gimbal: { trackMode: 'rate', trackObject: trackedObject, update: jest.fn() },
+        sensor: laser,
+        sensors: [laser]
+      }
+      universe._observatories.push(observatory)
+
+      universe.scheduleEvent({
+        time: mockTime,
+        type: 'setDirectedEnergyActive',
+        data: { observer: 'OBS', device: 'HSV HEL', active: true }
+      })
+
+      universe.update(mockTime)
+
+      expect(laser.active).toBe(true)
+      expect(observatory.gimbal.trackMode).toBe('rate')
+      expect(observatory.gimbal.trackObject).toBe(trackedObject)
     });
   });
 

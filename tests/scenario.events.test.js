@@ -159,6 +159,35 @@ describe('Scenario event scheduling', () => {
     expect(primarySensor.stepZoomLevel).not.toHaveBeenCalled()
   })
 
+  test('setDirectedEnergyActive toggles a named laser payload without affecting tracking', () => {
+    const trackedObject = { name: 'SAT' }
+    const primarySensor = { name: 'Primary', setZoomLevel: jest.fn() }
+    const laser = { name: 'HSV HEL', type: 'Laser', active: false, update: jest.fn() }
+    const gimbal = { trackMode: 'rate', trackObject: trackedObject, update: jest.fn() }
+    const site = { name: 'OBS', update: jest.fn() }
+    universe._observatories.push({
+      site,
+      gimbal,
+      sensor: primarySensor,
+      sensors: [primarySensor, laser]
+    })
+
+    scheduleScenarioEvents(universe, viewer, [
+      {
+        time: 0,
+        type: 'setDirectedEnergyActive',
+        observer: 'OBS',
+        device: 'HSV HEL',
+        active: true
+      }
+    ])
+
+    universe.update(start)
+    expect(laser.active).toBe(true)
+    expect(gimbal.trackMode).toBe('rate')
+    expect(gimbal.trackObject).toBe(trackedObject)
+  })
+
   test('loadScenario adds events without clearing existing ones', () => {
     // Add a pre-existing event
     universe.scheduleEvent({ time: JulianDate.addSeconds(start, 100, new JulianDate()), type: 'foo', data: {} })

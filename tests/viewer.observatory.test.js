@@ -176,6 +176,14 @@ jest.mock('../src/engine/cesium/SensorFieldOfVIewVisualizer.js', () => {
   return jest.fn().mockImplementation(() => ({ show: true }))
 })
 
+jest.mock('../src/engine/cesium/LaserFieldOfRegardVisualizer.js', () => {
+  return jest.fn().mockImplementation(() => ({ show: false }))
+})
+
+jest.mock('../src/engine/cesium/LaserFieldOfViewVisualizer.js', () => {
+  return jest.fn().mockImplementation(() => ({ show: true }))
+})
+
 jest.mock('../src/engine/cesium/GeoBeltVisualizer.js', () => {
   return jest.fn().mockImplementation(() => ({ show: true }))
 })
@@ -229,6 +237,8 @@ import { mixinViewer } from '../src/widgets/Viewer.js'
 import Observatory from '../src/engine/objects/Observatory.js'
 import SensorFieldOfRegardVisualizer from '../src/engine/cesium/SensorFieldOfRegardVisualizer.js'
 import SensorFieldOfViewVisualizer from '../src/engine/cesium/SensorFieldOfVIewVisualizer.js'
+import LaserFieldOfRegardVisualizer from '../src/engine/cesium/LaserFieldOfRegardVisualizer.js'
+import LaserFieldOfViewVisualizer from '../src/engine/cesium/LaserFieldOfViewVisualizer.js'
 
 function makeViewerStub() {
   return {
@@ -387,6 +397,36 @@ describe('Viewer observatory behavior', () => {
     const fovColor = SensorFieldOfViewVisualizer.mock.calls[0][5]
     expect(forColor?.label).toBe('#ff0000')
     expect(fovColor?.label).toBe('#ff0000')
+  })
+
+  test('dispatches laser payloads to laser placeholder visualizers', () => {
+    const viewer = makeViewerStub()
+    const universe = {
+      earth: {
+        update: jest.fn(),
+        worldToLocalTransform: {}
+      },
+      _trackables: []
+    }
+
+    mixinViewer(viewer, universe, {
+      infoBox2: false,
+      toolbar2: false,
+      showNightLayer: false,
+      showWeatherLayer: false,
+      enableObjectSearch: false
+    })
+
+    const site = { name: 'HSV Laser Test Range' }
+    const gimbal = { name: 'HSV Gimbal' }
+    const laser = { name: 'HSV HEL', type: 'Laser', color: '#ff0000', visualizer: {} }
+
+    viewer.addSensorVisualizer(site, gimbal, laser)
+
+    expect(LaserFieldOfRegardVisualizer).toHaveBeenCalledWith(viewer, site, laser, universe, expect.anything())
+    expect(LaserFieldOfViewVisualizer).toHaveBeenCalledWith(viewer, site, gimbal, laser, universe, expect.anything())
+    expect(SensorFieldOfRegardVisualizer).not.toHaveBeenCalled()
+    expect(SensorFieldOfViewVisualizer).not.toHaveBeenCalled()
   })
 
   test('updates sensor-view camera frustum when sensor zoom changes', () => {

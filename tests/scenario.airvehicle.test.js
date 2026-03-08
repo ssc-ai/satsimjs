@@ -84,6 +84,22 @@ describe('scenario air vehicle support', () => {
     expect(velocityNed.z).toBeCloseTo(-3, 8)
   })
 
+  test('propagates collision radius aliases onto the created vehicle', () => {
+    addScenarioObject(universe, viewer, {
+      type: 'AirVehicle',
+      name: 'Drone-Collision',
+      latitude: 34.25,
+      longitude: -117.1,
+      altitude: 1200,
+      collision_radius_m: 3,
+    })
+
+    const createdVehicle = viewer.addObjectVisualizer.mock.calls[0][0]
+    expect(createdVehicle.collisionRadius).toBe(3)
+    expect(createdVehicle.collision_radius_m).toBe(3)
+    expect(createdVehicle.collisionRadiusM).toBe(3)
+  })
+
   test('accepts string model entries and applies default model options', () => {
     addScenarioObject(universe, viewer, {
       type: 'AirVehicle',

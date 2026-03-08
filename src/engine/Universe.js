@@ -4,6 +4,7 @@ import SGP4Satellite from "./objects/SGP4Satellite.js";
 import EarthGroundStation from "./objects/EarthGroundStation.js";
 import AzElGimbal from "./objects/AzElGimbal.js";
 import ElectroOpicalSensor from "./objects/ElectroOpticalSensor.js";
+import Laser from "./objects/Laser.js";
 import LagrangeInterpolatedObject from "./objects/LagrangeInterpolatedObject.js";
 import TwoBodySatellite from "./objects/TwoBodySatellite.js";
 import AirVehicle from "./objects/AirVehicle.js";
@@ -16,6 +17,18 @@ import EventQueue from "./event/EventQueue.js";
 function numberOr(value, fallback = 0) {
   const n = Number(value)
   return Number.isFinite(n) ? n : fallback
+}
+
+function booleanOr(value, fallback = false) {
+  if (value === undefined || value === null) {
+    return fallback
+  }
+  if (typeof value === 'string') {
+    const normalized = value.trim().toLowerCase()
+    if (normalized === 'true') return true
+    if (normalized === 'false') return false
+  }
+  return Boolean(value)
 }
 
 function resolveEventVector3(value) {
@@ -113,9 +126,9 @@ function findObservatoryByName(universe, observerName) {
 }
 
 /**
- * Resolve a target sensor within an observatory.
+ * Resolve a target payload within an observatory.
  *
- * When no sensor name is provided, the primary sensor is returned to preserve
+ * When no payload name is provided, the primary payload is returned to preserve
  * legacy single-sensor event behavior.
  *
  * @param {Observatory|Object|undefined} observatory
@@ -137,30 +150,61 @@ function findObservatorySensor(observatory, sensorName) {
 }
 
 /**
- * Generate a default sensor name for an observatory sensor slot.
+ * Normalize an observatory payload type.
  *
- * @param {string} observatoryName
- * @param {number} [sensorIndex=0]
- * @returns {string}
+ * @param {string|undefined} payloadType
+ * @returns {string|undefined}
  */
-function defaultObservatorySensorName(observatoryName, sensorIndex = 0) {
-  const baseName = String(observatoryName ?? '').trim()
-  const sensorBase = baseName ? `${baseName} Sensor` : 'Sensor'
-  return sensorIndex === 0 ? sensorBase : `${sensorBase} ${sensorIndex + 1}`
+function normalizeObservatoryPayloadType(payloadType) {
+  const normalized = String(payloadType ?? '').trim().toLowerCase()
+  if (!normalized) return undefined
+  return normalized === 'laser' ? 'Laser' : 'ElectroOpticalSensor'
 }
 
 /**
- * Normalize a single sensor config into the canonical runtime shape used by
- * observatory construction.
+ * Generate a default payload name for an observatory payload slot.
+ *
+ * @param {string} observatoryName
+ * @param {number} [sensorIndex=0]
+ * @param {string|undefined} [payloadType]
+ * @returns {string}
+ */
+function defaultObservatorySensorName(observatoryName, sensorIndex = 0, payloadType = undefined) {
+  const baseName = String(observatoryName ?? '').trim()
+  const payloadBase = payloadType === 'Laser'
+    ? (baseName ? `${baseName} Laser` : 'Laser')
+    : (baseName ? `${baseName} Sensor` : 'Sensor')
+  return sensorIndex === 0 ? payloadBase : `${payloadBase} ${sensorIndex + 1}`
+}
+
+/**
+ * Normalize a single observatory payload config into the canonical runtime
+ * shape used by observatory construction.
  *
  * @param {Object|undefined} entry
  * @param {string} observatoryName
  * @param {number} [sensorIndex=0]
- * @returns {{height:number, width:number, y_fov:number, x_fov:number, field_of_regard:Array, color:any, zoom:Object|undefined, name:string}}
+ * @returns {Object}
  */
 function normalizeObservatorySensorConfig(entry, observatoryName, sensorIndex = 0) {
-  const sensorName = String(entry?.name ?? '').trim() || defaultObservatorySensorName(observatoryName, sensorIndex)
+  const payloadType = normalizeObservatoryPayloadType(entry?.type)
+  const sensorName = String(entry?.name ?? '').trim() || defaultObservatorySensorName(observatoryName, sensorIndex, payloadType)
+  if (payloadType === 'Laser') {
+    return {
+      type: 'Laser',
+      beamDiameter: Number(entry?.beamDiameter ?? entry?.beam_diameter),
+      power: Number(entry?.power),
+      active: booleanOr(entry?.active, false),
+      maxRange: Number(entry?.maxRange ?? entry?.max_range),
+      y_fov: Number(entry?.y_fov ?? 0.01),
+      x_fov: Number(entry?.x_fov ?? 0.01),
+      field_of_regard: entry?.field_of_regard ?? [],
+      color: entry?.color,
+      name: sensorName
+    }
+  }
   return {
+    type: 'ElectroOpticalSensor',
     height: Number(entry?.height ?? entry?.sensor_height),
     width: Number(entry?.width ?? entry?.sensor_width),
     y_fov: Number(entry?.y_fov ?? 5),
@@ -203,7 +247,8 @@ function normalizeGroundObservatoryConfig(nameOrConfig, latitude, longitude, alt
         x_fov: config.x_fov,
         field_of_regard: config.field_of_regard,
         zoom: config.zoom,
-        name: config.sensor_name
+        name: config.sensor_name,
+        type: config.type
       }]
 
     return {
@@ -240,7 +285,8 @@ function normalizeGroundObservatoryConfig(nameOrConfig, latitude, longitude, alt
 }
 
 /**
- * Represents a universe containing ECI objects, ground stations, sensors, and gimbals.
+ * Represents a universe containing ECI objects, ground stations, observatory
+ * payloads, and gimbals.
  */
 class Universe {
   constructor() {
@@ -269,8 +315,8 @@ class Universe {
      */
     this._gimbals = []
     /**
-     * The sensors in the universe.
-     * @type {Array.<ElectroOpicalSensor>}
+     * The observatory payloads in the universe.
+     * @type {Array.<ElectroOpicalSensor|Laser>}
      * @private
      */
     this._sensors = []
@@ -304,6 +350,7 @@ class Universe {
     // - trackObject: { observer: siteName, target: objectName }
     // - setSensorZoom: { observer: siteName, sensor?: sensorName, zoomLevel }
     // - stepSensorZoom: { observer: siteName, sensor?: sensorName, deltaZoomLevel }
+    // - setDirectedEnergyActive: { observer: siteName, device|sensor: payloadName, active }
     this._events.registerHandler('trackObject', (universe, ev) => {
       const observerName = ev?.data?.observer ?? ev?.observer
       const dataHasTarget = ev?.data && Object.prototype.hasOwnProperty.call(ev.data, 'target')
@@ -451,6 +498,23 @@ class Universe {
       )
       if (!Number.isFinite(deltaZoomLevel) || deltaZoomLevel === 0) return
       sensor.stepZoomLevel(deltaZoomLevel)
+    })
+
+    this._events.registerHandler('setDirectedEnergyActive', (universe, ev) => {
+      const data = ev?.data ?? {}
+      const observerName = data.observer ?? ev?.observer
+      if (!observerName) return
+
+      const observatory = findObservatoryByName(universe, observerName)
+      if (!observatory) return
+
+      const deviceName = data.device ?? data.sensor ?? data.sensor_name ?? ev?.device ?? ev?.sensor ?? ev?.sensor_name
+      const payload = findObservatorySensor(observatory, deviceName)
+      if (!payload || payload.type !== 'Laser') return
+
+      const activeValue = data.active ?? ev?.active
+      if (activeValue === undefined) return
+      payload.active = booleanOr(activeValue, false)
     })
 
     const applyAirVehicleManeuver = (universe, ev) => {
@@ -661,8 +725,8 @@ class Universe {
    * Adds a ground electro-optical observatory to the universe.
    *
    * Supported forms:
-   * - Legacy positional arguments for a single sensor.
-   * - Object config with `sensors[]` for a shared-gimbal multi-sensor observatory.
+   * - Legacy positional arguments for a single EO sensor.
+   * - Object config with `sensors[]` for a shared-gimbal multi-payload observatory.
    *
    * @param {string|Object} name - Observatory name, or an object config containing
    *   `name`, `latitude`, `longitude`, `altitude`, `gimbalSlewRates`,
@@ -678,7 +742,7 @@ class Universe {
    * @param {Array<number>} [field_of_regard] - The field of regard of the legacy single sensor.
    * @param {Object<string, number|Object>} [gimbalSlewRates] - Optional per-axis slew settings.
    * @param {number} [sensorMaxDistance] - Optional fallback max sensor/gimbal range in meters when idle.
-   * @returns {{site: EarthGroundStation, gimbal: AzElGimbal, sensor: ElectroOpicalSensor|undefined, sensors: Array<ElectroOpicalSensor>}} - The added observatory.
+   * @returns {{site: EarthGroundStation, gimbal: AzElGimbal, sensor: ElectroOpicalSensor|Laser|undefined, sensors: Array<ElectroOpicalSensor|Laser>}} - The added observatory.
    */
   addGroundElectroOpticalObservatory(name, latitude, longitude, altitude, gimbalType, height, width, y_fov, x_fov, field_of_regard, gimbalSlewRates = undefined, sensorMaxDistance = undefined) {
     const config = normalizeGroundObservatoryConfig(
@@ -711,6 +775,31 @@ class Universe {
     this.addObject(gimbal, false)
 
     const sensors = config.sensors.map((sensorConfig) => {
+      if (sensorConfig.type === 'Laser') {
+        const laser = new Laser({
+          name: sensorConfig.name,
+          beamDiameter: sensorConfig.beamDiameter,
+          power: sensorConfig.power,
+          active: sensorConfig.active,
+          maxRange: sensorConfig.maxRange,
+          y_fov: sensorConfig.y_fov,
+          x_fov: sensorConfig.x_fov,
+          field_of_regard: sensorConfig.field_of_regard,
+          color: sensorConfig.color
+        })
+        const laserMaxRange = Number(sensorConfig.maxRange ?? config.sensorMaxDistance ?? gimbal.maxRange)
+        if (Number.isFinite(laserMaxRange) && laserMaxRange > 0) {
+          laser.maxRange = laserMaxRange
+        }
+        if (defined(sensorConfig.color)) {
+          laser.color = sensorConfig.color
+        }
+        laser.attach(gimbal)
+        this.addObject(laser, false)
+        this._sensors.push(laser)
+        return laser
+      }
+
       const sensorArgs = [
         sensorConfig.height,
         sensorConfig.width,

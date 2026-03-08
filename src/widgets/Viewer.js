@@ -4,6 +4,8 @@ import InfoBox from "./InfoBox.js"
 import Toolbar from "./Toolbar.js"
 import SensorFieldOfRegardVisualizer from "../engine/cesium/SensorFieldOfRegardVisualizer.js"
 import SensorFieldOfViewVisualizer from "../engine/cesium/SensorFieldOfVIewVisualizer.js"
+import LaserFieldOfRegardVisualizer from "../engine/cesium/LaserFieldOfRegardVisualizer.js"
+import LaserFieldOfViewVisualizer from "../engine/cesium/LaserFieldOfViewVisualizer.js"
 import GeoBeltVisualizer from "../engine/cesium/GeoBeltVisualizer.js"
 import CallbackPositionProperty from "../engine/cesium/CallbackPositionProperty.js"
 import { createObjectPositionProperty, createObjectOrientationProperty, getObjectPositionInCesiumFrame } from "../engine/cesium/utils.js"
@@ -405,7 +407,7 @@ function mixinViewer(viewer, universe, options) {
    * sensor updates the rendered view immediately without assuming a fixed
    * horizontal or vertical frustum.
    *
-   * @param {ElectroOpicalSensor|Object} sensor
+   * @param {ElectroOpicalSensor|import('../engine/objects/Laser.js').default|Object} sensor
    * @param {number} aspectRatio
    * @param {number} [paddingRatio=0.2]
    * @returns {number}
@@ -760,16 +762,20 @@ function mixinViewer(viewer, universe, options) {
    * 
    * @param {Site} site - The site.
    * @param {Gimbal} gimbal - The gimbal.
-   * @param {ElectroOpicalSensor & {color?: string|number[]}} sensor - The sensor.
+   * @param {(ElectroOpicalSensor|import('../engine/objects/Laser.js').default) & {color?: string|number[]}} sensor - The payload.
    */
   viewer.addSensorVisualizer = function (site, gimbal, sensor) {
     const sensorColor = resolveSensorColor(sensor?.color)
-    const forViz = new SensorFieldOfRegardVisualizer(viewer, site, sensor, universe, sensorColor)
+    const isLaser = sensor?.type === 'Laser'
+    const FieldOfRegardVisualizer = isLaser ? LaserFieldOfRegardVisualizer : SensorFieldOfRegardVisualizer
+    const FieldOfViewVisualizer = isLaser ? LaserFieldOfViewVisualizer : SensorFieldOfViewVisualizer
+
+    const forViz = new FieldOfRegardVisualizer(viewer, site, sensor, universe, sensorColor)
     forViz.show = false
     viewer.sensorForVisualizers.push(forViz)
     sensor.visualizer.fieldOfRegard = forViz
 
-    const fovViz = new SensorFieldOfViewVisualizer(viewer, site, gimbal, sensor, universe, sensorColor)
+    const fovViz = new FieldOfViewVisualizer(viewer, site, gimbal, sensor, universe, sensorColor)
     viewer.sensorFovVisualizers.push(fovViz)
     sensor.visualizer.fieldOfView = fovViz
 

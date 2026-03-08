@@ -14,6 +14,7 @@ export { default as EarthGroundStation } from './engine/objects/EarthGroundStati
 export { default as ElectroOpicalSensor } from './engine/objects/ElectroOpticalSensor.js'
 export { default as EphemerisObject } from './engine/objects/EphemerisObject.js'
 export { default as Gimbal } from './engine/objects/Gimbal.js'
+export { default as Laser } from './engine/objects/Laser.js'
 export { default as LagrangeInterpolatedObject } from './engine/objects/LagrangeInterpolatedObject.js'
 export { default as SGP4Satellite } from './engine/objects/SGP4Satellite.js'
 export { default as SimObject } from './engine/objects/SimObject.js'
