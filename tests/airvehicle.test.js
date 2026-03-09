@@ -1,5 +1,5 @@
 import { jest } from '@jest/globals'
-import { Cartesian3, JulianDate, ReferenceFrame } from 'cesium'
+import { Cartesian3, Cartographic, EllipsoidGeodesic, JulianDate, ReferenceFrame } from 'cesium'
 import AirVehicle from '../src/engine/objects/AirVehicle.js'
 
 const EARTH_ANGULAR_SPEED = 7.292115146706979e-5
@@ -159,5 +159,232 @@ describe('AirVehicle', () => {
     expect(vehicle.velocityNed.x).toBeCloseTo(velAt30First.x, 12)
     expect(vehicle.velocityNed.y).toBeCloseTo(velAt30First.y, 12)
     expect(vehicle.velocityNed.z).toBeCloseTo(velAt30First.z, 12)
+  })
+
+  test('supports absolute-time waypoint traversal', () => {
+    const vehicle = new AirVehicle(0, 0, 100, new Cartesian3(), new Cartesian3(), undefined, epoch, 'Route-Absolute')
+    vehicle.setWaypointRoute({
+      startTime: epoch,
+      waypoints: [
+        { lat: 0, lon: 0, alt: 100 },
+        { lat: 0, lon: 1, alt: 200, offsetSec: 20 },
+        { lat: 1, lon: 1, alt: 300, time: JulianDate.addSeconds(epoch, 50, new JulianDate()) },
+      ]
+    }, epoch)
+
+    vehicle.update(JulianDate.addSeconds(epoch, 10, new JulianDate()), {})
+    expect(vehicle.latitude).toBeCloseTo(0, 6)
+    expect(vehicle.longitude).toBeCloseTo(0.5, 3)
+    expect(vehicle.altitude).toBeCloseTo(150, 6)
+
+    vehicle.update(JulianDate.addSeconds(epoch, 35, new JulianDate()), {})
+    expect(vehicle.latitude).toBeCloseTo(0.5, 3)
+    expect(vehicle.longitude).toBeCloseTo(1, 3)
+    expect(vehicle.altitude).toBeCloseTo(250, 6)
+  })
+
+  test('supports speed-derived waypoint traversal', () => {
+    const vehicle = new AirVehicle(0, 0, 0, new Cartesian3(), new Cartesian3(), undefined, epoch, 'Route-Speed')
+    vehicle.setWaypointRoute({
+      startTime: epoch,
+      defaultSpeedMps: 100,
+      waypoints: [
+        { lat: 0, lon: 0, alt: 0 },
+        { lat: 0, lon: 0.001, alt: 0 },
+      ]
+    }, epoch)
+
+    const route = vehicle.waypointRoute
+    const durationSec = JulianDate.secondsDifference(route.waypoints[1].time, route.waypoints[0].time)
+    const distanceM = new EllipsoidGeodesic(
+      Cartographic.fromDegrees(0, 0, 0),
+      Cartographic.fromDegrees(0.001, 0, 0)
+    ).surfaceDistance
+
+    expect(durationSec).toBeCloseTo(distanceM / 100, 6)
+
+    vehicle.update(JulianDate.addSeconds(epoch, durationSec / 2, new JulianDate()), {})
+    expect(vehicle.longitude).toBeCloseTo(0.0005, 4)
+    expect(vehicle.heading).toBeCloseTo(90, 3)
+  })
+
+  test('supports mixed timing rules in one waypoint route', () => {
+    const vehicle = new AirVehicle(0, 0, 0, new Cartesian3(), new Cartesian3(), undefined, epoch, 'Route-Mixed')
+    vehicle.setWaypointRoute({
+      startTime: epoch,
+      defaultSpeedMps: 50,
+      waypoints: [
+        { lat: 0, lon: 0, alt: 0 },
+        { lat: 0, lon: 0.001, alt: 50, offsetSec: 10 },
+        { lat: 0.001, lon: 0.001, alt: 100 },
+      ]
+    }, epoch)
+
+    const route = vehicle.waypointRoute
+    expect(JulianDate.secondsDifference(route.waypoints[1].time, route.waypoints[0].time)).toBeCloseTo(10, 9)
+    expect(JulianDate.secondsDifference(route.waypoints[2].time, route.waypoints[1].time)).toBeGreaterThan(2)
+    expect(route.mode).toBe('once')
+    expect(route.waypoints).toHaveLength(3)
+  })
+
+  test('holds the first waypoint before route start time', () => {
+    const startTime = JulianDate.addSeconds(epoch, 30, new JulianDate())
+    const vehicle = new AirVehicle(10, 20, 5, new Cartesian3(20, 0, 0), new Cartesian3(), undefined, epoch, 'Route-PreStart')
+    vehicle.setWaypointRoute({
+      startTime,
+      waypoints: [
+        { lat: 1, lon: 2, alt: 30 },
+        { lat: 1, lon: 3, alt: 30, offsetSec: 20 },
+      ]
+    }, epoch)
+
+    vehicle.update(epoch, {})
+    expect(vehicle.latitude).toBeCloseTo(1, 8)
+    expect(vehicle.longitude).toBeCloseTo(2, 8)
+    expect(vehicle.altitude).toBeCloseTo(30, 8)
+    expect(vehicle.velocityNed.x).toBeCloseTo(0, 8)
+    expect(vehicle.velocityNed.y).toBeCloseTo(0, 8)
+    expect(vehicle.velocityNed.z).toBeCloseTo(0, 8)
+  })
+
+  test('holds the final waypoint after a once route ends', () => {
+    const vehicle = new AirVehicle(0, 0, 0, new Cartesian3(), new Cartesian3(), undefined, epoch, 'Route-Once')
+    vehicle.setWaypointRoute({
+      startTime: epoch,
+      waypoints: [
+        { lat: 0, lon: 0, alt: 0 },
+        { lat: 0, lon: 1, alt: 50, offsetSec: 20 },
+      ]
+    }, epoch)
+
+    vehicle.update(JulianDate.addSeconds(epoch, 40, new JulianDate()), {})
+    expect(vehicle.latitude).toBeCloseTo(0, 8)
+    expect(vehicle.longitude).toBeCloseTo(1, 8)
+    expect(vehicle.altitude).toBeCloseTo(50, 8)
+    expect(vehicle.velocityNed.x).toBeCloseTo(0, 8)
+    expect(vehicle.velocityNed.y).toBeCloseTo(0, 8)
+    expect(vehicle.velocityNed.z).toBeCloseTo(0, 8)
+  })
+
+  test('supports pingpong mode by reversing the same legs', () => {
+    const vehicle = new AirVehicle(0, 0, 0, new Cartesian3(), new Cartesian3(), undefined, epoch, 'Route-PingPong')
+    vehicle.setWaypointRoute({
+      startTime: epoch,
+      mode: 'pingpong',
+      waypoints: [
+        { lat: 0, lon: 0, alt: 0 },
+        { lat: 0, lon: 1, alt: 0, offsetSec: 20 },
+      ]
+    }, epoch)
+
+    vehicle.update(JulianDate.addSeconds(epoch, 30, new JulianDate()), {})
+    expect(vehicle.longitude).toBeCloseTo(0.5, 3)
+  })
+
+  test('supports loop mode using the route default speed for the closing leg', () => {
+    const vehicle = new AirVehicle(0, 0, 0, new Cartesian3(), new Cartesian3(), undefined, epoch, 'Route-Loop')
+    vehicle.setWaypointRoute({
+      startTime: epoch,
+      mode: 'loop',
+      defaultSpeedMps: 100,
+      waypoints: [
+        { lat: 0, lon: 0, alt: 0 },
+        { lat: 0, lon: 0.001, alt: 0, offsetSec: 10 },
+      ]
+    }, epoch)
+
+    const closingDistanceM = new EllipsoidGeodesic(
+      Cartographic.fromDegrees(0.001, 0, 0),
+      Cartographic.fromDegrees(0, 0, 0)
+    ).surfaceDistance
+    const closingDurationSec = closingDistanceM / 100
+    vehicle.update(JulianDate.addSeconds(epoch, 10 + closingDurationSec / 2, new JulianDate()), {})
+    expect(vehicle.longitude).toBeCloseTo(0.0005, 4)
+  })
+
+  test('takes the shortest path across the dateline', () => {
+    const vehicle = new AirVehicle(0, 179, 0, new Cartesian3(), new Cartesian3(), undefined, epoch, 'Route-Dateline')
+    vehicle.setWaypointRoute({
+      startTime: epoch,
+      waypoints: [
+        { lat: 0, lon: 179, alt: 0 },
+        { lat: 0, lon: -179, alt: 0, offsetSec: 20 },
+      ]
+    }, epoch)
+
+    vehicle.update(JulianDate.addSeconds(epoch, 10, new JulianDate()), {})
+    expect(Math.abs(Math.abs(vehicle.longitude) - 180)).toBeLessThan(0.5)
+  })
+
+  test('auto heading follows waypoint motion while explicit heading remains fixed', () => {
+    const autoVehicle = new AirVehicle(0, 0, 0, new Cartesian3(), new Cartesian3(), undefined, epoch, 'Route-AutoHeading')
+    autoVehicle.setWaypointRoute({
+      startTime: epoch,
+      waypoints: [
+        { lat: 0, lon: 0, alt: 0 },
+        { lat: 0, lon: 1, alt: 0, offsetSec: 20 },
+      ]
+    }, epoch)
+    autoVehicle.update(JulianDate.addSeconds(epoch, 5, new JulianDate()), {})
+    expect(autoVehicle.heading).toBeCloseTo(90, 3)
+
+    const fixedHeadingVehicle = new AirVehicle(0, 0, 0, new Cartesian3(), new Cartesian3(), 15, epoch, 'Route-FixedHeading')
+    fixedHeadingVehicle.setWaypointRoute({
+      startTime: epoch,
+      waypoints: [
+        { lat: 0, lon: 0, alt: 0 },
+        { lat: 0, lon: 1, alt: 0, offsetSec: 20 },
+      ]
+    }, epoch)
+    fixedHeadingVehicle.update(JulianDate.addSeconds(epoch, 5, new JulianDate()), {})
+    expect(fixedHeadingVehicle.heading).toBeCloseTo(15, 8)
+  })
+
+  test('remains deterministic for non-monotonic waypoint queries', () => {
+    const vehicle = new AirVehicle(0, 0, 0, new Cartesian3(), new Cartesian3(), undefined, epoch, 'Route-Deterministic')
+    vehicle.setWaypointRoute({
+      startTime: epoch,
+      mode: 'pingpong',
+      waypoints: [
+        { lat: 0, lon: 0, alt: 0 },
+        { lat: 0, lon: 1, alt: 100, offsetSec: 20 },
+        { lat: 1, lon: 1, alt: 200, offsetSec: 20 },
+      ]
+    }, epoch)
+
+    const t30 = JulianDate.addSeconds(epoch, 30, new JulianDate())
+    const t10 = JulianDate.addSeconds(epoch, 10, new JulianDate())
+    vehicle.update(t30, {})
+    const firstLon = vehicle.longitude
+    const firstLat = vehicle.latitude
+    const firstAlt = vehicle.altitude
+
+    vehicle.update(t10, {})
+    vehicle.update(t30, {})
+    expect(vehicle.longitude).toBeCloseTo(firstLon, 12)
+    expect(vehicle.latitude).toBeCloseTo(firstLat, 12)
+    expect(vehicle.altitude).toBeCloseTo(firstAlt, 12)
+  })
+
+  test('clears an active route when manual velocity is set', () => {
+    const vehicle = new AirVehicle(0, 0, 0, new Cartesian3(), new Cartesian3(), undefined, epoch, 'Route-ManualOverride')
+    vehicle.setWaypointRoute({
+      startTime: epoch,
+      waypoints: [
+        { lat: 0, lon: 0, alt: 0 },
+        { lat: 0, lon: 1, alt: 0, offsetSec: 20 },
+      ]
+    }, epoch)
+
+    const overrideTime = JulianDate.addSeconds(epoch, 10, new JulianDate())
+    vehicle.update(overrideTime, {})
+    const lonAtOverride = vehicle.longitude
+
+    vehicle.velocityNed = new Cartesian3(50, 0, 0)
+    expect(vehicle.hasWaypointRoute).toBe(false)
+    expect(vehicle.longitude).toBeCloseTo(lonAtOverride, 12)
+
+    vehicle.update(JulianDate.addSeconds(overrideTime, 10, new JulianDate()), {})
+    expect(vehicle.latitude).toBeGreaterThan(0)
   })
 })

@@ -19,6 +19,7 @@ describe('scenario air vehicle support', () => {
 
     universe = {
       hasObject: jest.fn().mockReturnValue(false),
+      removeObject: jest.fn(),
       addAirVehicle: jest.fn().mockImplementation((name, latitude, longitude, altitude, velocityNed, accelerationNed, heading) => ({
         name,
         latitude,
@@ -29,6 +30,13 @@ describe('scenario air vehicle support', () => {
         heading: heading ?? 0,
         position: Cartesian3.fromDegrees(longitude, latitude, altitude),
         update: jest.fn(),
+        hasWaypointRoute: false,
+        waypointRoute: undefined,
+        setWaypointRoute: jest.fn(function setWaypointRoute(route) {
+          this.hasWaypointRoute = true
+          this.waypointRoute = route
+          return this
+        }),
       })),
     }
   })
@@ -84,20 +92,18 @@ describe('scenario air vehicle support', () => {
     expect(velocityNed.z).toBeCloseTo(-3, 8)
   })
 
-  test('propagates collision radius aliases onto the created vehicle', () => {
+  test('propagates collision radius onto the created vehicle', () => {
     addScenarioObject(universe, viewer, {
       type: 'AirVehicle',
       name: 'Drone-Collision',
       latitude: 34.25,
       longitude: -117.1,
       altitude: 1200,
-      collision_radius_m: 3,
+      collision_radius: 3,
     })
 
     const createdVehicle = viewer.addObjectVisualizer.mock.calls[0][0]
     expect(createdVehicle.collisionRadius).toBe(3)
-    expect(createdVehicle.collision_radius_m).toBe(3)
-    expect(createdVehicle.collisionRadiusM).toBe(3)
   })
 
   test('accepts string model entries and applies default model options', () => {
@@ -252,6 +258,105 @@ describe('scenario air vehicle support', () => {
     })
 
     expect(universe.addAirVehicle).not.toHaveBeenCalled()
+    expect(viewer.addObjectVisualizer).not.toHaveBeenCalled()
+  })
+
+  test('parses nested waypoint routes and derives the initial position from the first waypoint', () => {
+    addScenarioObject(universe, viewer, {
+      type: 'AirVehicle',
+      name: 'Drone-Route',
+      route: {
+        mode: 'loop',
+        start_time: '2024-01-01T00:00:00Z',
+        default_speed: 20,
+        waypoints: [
+          { latitude: 34.25, longitude: -117.1, altitude: 1200 },
+          { latitude: 34.26, longitude: -117.11, altitude: 1250, offset: 30 },
+        ]
+      }
+    })
+
+    expect(universe.addAirVehicle).toHaveBeenCalledTimes(1)
+    const args = universe.addAirVehicle.mock.calls[0]
+    expect(args[1]).toBeCloseTo(34.25, 8)
+    expect(args[2]).toBeCloseTo(-117.1, 8)
+    expect(args[3]).toBeCloseTo(1200, 8)
+
+    const createdVehicle = universe.addAirVehicle.mock.results[0].value
+    expect(createdVehicle.setWaypointRoute).toHaveBeenCalledTimes(1)
+    expect(createdVehicle.setWaypointRoute.mock.calls[0][0]).toEqual({
+      mode: 'loop',
+      startTime: '2024-01-01T00:00:00Z',
+      defaultSpeedMps: 20,
+      waypoints: [
+        { latitude: 34.25, longitude: -117.1, altitude: 1200 },
+        { latitude: 34.26, longitude: -117.11, altitude: 1250, offsetSec: 30 },
+      ]
+    })
+
+    expect(viewer.addObjectVisualizer).toHaveBeenCalledTimes(1)
+    expect(viewer.addObjectVisualizer.mock.calls[0][1]).toContain('mode=loop')
+    expect(viewer.addObjectVisualizer.mock.calls[0][1]).toContain('waypoints=2')
+  })
+
+  test('normalizes top-level waypoint route fields', () => {
+    addScenarioObject(universe, viewer, {
+      type: 'drone',
+      name: 'Drone-Route-Aliases',
+      waypoints: [
+        { latitude: 35, longitude: -118, altitude: 500 },
+        { latitude: 35.001, longitude: -118.002, altitude: 550, offset: 15, speed: 30 },
+      ],
+      route_mode: 'pingpong',
+      start_time: '2024-01-01T00:00:10Z',
+      default_speed: 25,
+      loop_speed: 18,
+    })
+
+    const createdVehicle = universe.addAirVehicle.mock.results[0].value
+    expect(createdVehicle.setWaypointRoute).toHaveBeenCalledTimes(1)
+    expect(createdVehicle.setWaypointRoute.mock.calls[0][0]).toEqual({
+      mode: 'pingpong',
+      startTime: '2024-01-01T00:00:10Z',
+      defaultSpeedMps: 25,
+      loopSpeedMps: 18,
+      waypoints: [
+        { latitude: 35, longitude: -118, altitude: 500 },
+        { latitude: 35.001, longitude: -118.002, altitude: 550, offsetSec: 15, speedMps: 30 },
+      ]
+    })
+  })
+
+  test('removes the created vehicle and skips visualization when waypoint route setup fails', () => {
+    universe.addAirVehicle.mockImplementationOnce((name, latitude, longitude, altitude, velocityNed, accelerationNed, heading) => ({
+      name,
+      latitude,
+      longitude,
+      altitude,
+      velocityNed,
+      accelerationNed,
+      heading: heading ?? 0,
+      position: Cartesian3.fromDegrees(longitude, latitude, altitude),
+      update: jest.fn(),
+      hasWaypointRoute: false,
+      waypointRoute: undefined,
+      setWaypointRoute: jest.fn(() => {
+        throw new Error('bad route')
+      }),
+    }))
+
+    addScenarioObject(universe, viewer, {
+      type: 'AirVehicle',
+      name: 'Drone-Bad-Route',
+      route: {
+        waypoints: [
+          { latitude: 34.25, longitude: -117.1, altitude: 1200 },
+          { latitude: 34.26, longitude: -117.11, altitude: 1250 },
+        ]
+      }
+    })
+
+    expect(universe.removeObject).toHaveBeenCalledTimes(1)
     expect(viewer.addObjectVisualizer).not.toHaveBeenCalled()
   })
 })

@@ -9,7 +9,12 @@ jest.mock('../src/engine/objects/Earth.js', () => {
     name: 'Earth',
     update: jest.fn(),
     attach: jest.fn(),
-    removeChild: jest.fn()
+    addChild: jest.fn((child) => {
+      child.parent = null
+    }),
+    removeChild: jest.fn((child) => {
+      child.parent = null
+    })
   }))
 })
 jest.mock('../src/engine/objects/Sun.js', () => {
@@ -270,5 +275,72 @@ describe('Scenario event scheduling', () => {
 
     universe.update(start)
     expect(vehicle.heading).toBeCloseTo(225, 8)
+  })
+
+  test('manual maneuver events cancel an active waypoint route and continue from the cancel point', () => {
+    const vehicle = universe.addAirVehicle(
+      'Drone-Route',
+      0,
+      0,
+      0,
+      new Cartesian3(),
+      new Cartesian3(),
+      undefined,
+      start
+    )
+    vehicle.setWaypointRoute({
+      startTime: start,
+      waypoints: [
+        { lat: 0, lon: 0, alt: 0 },
+        { lat: 0, lon: 1, alt: 0, offsetSec: 20 }
+      ]
+    }, start)
+
+    scheduleScenarioEvents(universe, viewer, [
+      {
+        time: 10,
+        type: 'setAirVehicleVelocityNed',
+        object: 'Drone-Route',
+        velocity_ned: [50, 0, 0]
+      }
+    ])
+
+    universe.update(JulianDate.addSeconds(start, 10, new JulianDate()))
+    expect(vehicle.hasWaypointRoute).toBe(false)
+    expect(vehicle.longitude).toBeCloseTo(0.5, 3)
+    expect(vehicle.velocityNed.x).toBeCloseTo(50, 8)
+    expect(vehicle.velocityNed.y).toBeCloseTo(0, 8)
+
+    universe.update(JulianDate.addSeconds(start, 20, new JulianDate()))
+    expect(vehicle.latitude).toBeGreaterThan(0)
+    expect(vehicle.longitude).toBeCloseTo(0.5, 2)
+  })
+
+  test('non-routed air vehicles continue to use manual maneuver events unchanged', () => {
+    const vehicle = universe.addAirVehicle(
+      'Drone-Manual',
+      0,
+      0,
+      0,
+      new Cartesian3(10, 0, 0),
+      new Cartesian3(),
+      undefined,
+      start
+    )
+
+    scheduleScenarioEvents(universe, viewer, [
+      {
+        time: 0,
+        type: 'airVehicleManeuver',
+        object: 'Drone-Manual',
+        velocity_ned: [0, 25, -2],
+        acceleration_ned: [0.1, 0, 0]
+      }
+    ])
+
+    universe.update(start)
+    expect(vehicle.hasWaypointRoute).toBe(false)
+    expect(vehicle.velocityNed).toEqual(new Cartesian3(0, 25, -2))
+    expect(vehicle.accelerationNed).toEqual(new Cartesian3(0.1, 0, 0))
   })
 })
