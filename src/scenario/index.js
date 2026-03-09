@@ -27,6 +27,7 @@ import {
 } from 'cesium'
 import Universe from '../engine/Universe.js'
 import { normalizeSensorZoomConfig } from '../engine/objects/observatoryUtils.js'
+import { booleanOr, numberOr, numberOrUndefined } from '../engine/utils.js'
 
 const DEFAULT_MODEL_MINIMUM_PIXEL_SIZE = 64
 const DEFAULT_MODEL_MAXIMUM_SCALE = 20000
@@ -65,23 +66,6 @@ function resolveScenarioColor(input) {
   }
 
   return Color.fromRandom({ alpha: 1.0 })
-}
-
-function numberOr(value, fallback = 0) {
-  const num = Number(value)
-  return Number.isFinite(num) ? num : fallback
-}
-
-function booleanOr(value, fallback = false) {
-  if (value === undefined || value === null) {
-    return fallback
-  }
-  if (typeof value === 'string') {
-    const normalized = value.trim().toLowerCase()
-    if (normalized === 'true') return true
-    if (normalized === 'false') return false
-  }
-  return Boolean(value)
 }
 
 function resolveGimbalAxisSlewRate(entry) {
@@ -154,13 +138,7 @@ function resolveSensorMaxDistance(input) {
 }
 
 function resolveCollisionRadius(input) {
-  const radius = Number(
-    input.collisionRadius ??
-    input.collision_radius_m ??
-    input.collisionRadiusM ??
-    input.collision_radius ??
-    input.collisionRadiusMeters
-  )
+  const radius = Number(input.collision_radius)
   return (Number.isFinite(radius) && radius > 0) ? radius : undefined
 }
 
@@ -262,6 +240,82 @@ function resolveAccelerationNed(entry) {
   }
 
   return new Cartesian3()
+}
+
+function resolveScenarioWaypoint(waypoint) {
+  return {
+    latitude: numberOrUndefined(waypoint?.latitude),
+    longitude: numberOrUndefined(waypoint?.longitude),
+    altitude: numberOrUndefined(waypoint?.altitude) ?? 0,
+    ...(waypoint?.time != null ? { time: waypoint.time } : {}),
+    ...(waypoint?.offset != null
+      ? { offsetSec: numberOrUndefined(waypoint?.offset) }
+      : {}),
+    ...(waypoint?.speed != null
+      ? { speedMps: numberOrUndefined(waypoint?.speed) }
+      : {})
+  }
+}
+
+function resolveScenarioWaypointRoute(entry) {
+  const routeInput = (defined(entry?.route) && typeof entry.route === 'object' && !Array.isArray(entry.route))
+    ? entry.route
+    : {}
+  const waypointsInput = Array.isArray(routeInput.waypoints)
+    ? routeInput.waypoints
+    : (Array.isArray(entry?.waypoints) ? entry.waypoints : undefined)
+
+  if (!(Array.isArray(waypointsInput) && waypointsInput.length > 0)) {
+    return undefined
+  }
+
+  const route = {
+    waypoints: waypointsInput.map((waypoint) => resolveScenarioWaypoint(waypoint))
+  }
+
+  const mode = routeInput.mode ?? entry?.route_mode
+  if (mode != null) {
+    route.mode = String(mode)
+  }
+
+  const loop = routeInput.loop ?? entry?.loop
+  if (loop != null) {
+    route.loop = booleanOr(loop, false)
+  }
+
+  const startTime = routeInput.start_time ?? entry?.start_time
+  if (startTime != null) {
+    route.startTime = startTime
+  }
+
+  const defaultSpeedMps = numberOrUndefined(
+    routeInput.default_speed ??
+    entry?.default_speed
+  )
+  if (defaultSpeedMps !== undefined) {
+    route.defaultSpeedMps = defaultSpeedMps
+  }
+
+  const loopSpeedMps = numberOrUndefined(
+    routeInput.loop_speed ??
+    entry?.loop_speed
+  )
+  if (loopSpeedMps !== undefined) {
+    route.loopSpeedMps = loopSpeedMps
+  }
+
+  return route
+}
+
+function formatJulianDateIso(value) {
+  if (value instanceof JulianDate) {
+    try {
+      return JulianDate.toDate(value).toISOString()
+    } catch (_) {
+      return 'current'
+    }
+  }
+  return value != null ? String(value) : 'current'
 }
 
 function resolveModelOffset(value) {
@@ -550,9 +604,11 @@ export function addAirVehicle(universe, viewer, entry, idx = 0) {
     return
   }
 
-  const latitude = numberOr(entry.latitude ?? entry.lat, NaN)
-  const longitude = numberOr(entry.longitude ?? entry.lon ?? entry.lng, NaN)
-  const altitude = numberOr(entry.altitude ?? entry.alt)
+  const waypointRoute = resolveScenarioWaypointRoute(entry)
+  const initialWaypoint = waypointRoute?.waypoints?.[0]
+  const latitude = numberOr(entry.latitude ?? entry.lat ?? initialWaypoint?.latitude, NaN)
+  const longitude = numberOr(entry.longitude ?? entry.lon ?? entry.lng ?? initialWaypoint?.longitude, NaN)
+  const altitude = numberOr(entry.altitude ?? entry.alt ?? initialWaypoint?.altitude)
   if (!Number.isFinite(latitude) || !Number.isFinite(longitude)) {
     console.log(`Skipping air vehicle ${name}: invalid latitude/longitude.`)
     return
@@ -562,7 +618,10 @@ export function addAirVehicle(universe, viewer, entry, idx = 0) {
   const heading = headingInput == null ? undefined : numberOr(headingInput)
   const velocityNed = resolveVelocityNed(entry, heading ?? 0)
   const accelerationNed = resolveAccelerationNed(entry)
-  const epoch = entry.epoch ? JulianDate.fromDate(new Date(entry.epoch)) : viewer.clock.currentTime.clone()
+  const routeStart = waypointRoute?.startTime ? new Date(waypointRoute.startTime) : undefined
+  const epoch = entry.epoch
+    ? JulianDate.fromDate(new Date(entry.epoch))
+    : (routeStart && Number.isFinite(routeStart.getTime()) ? JulianDate.fromDate(routeStart) : viewer.clock.currentTime.clone())
   const {
     modelGraphics,
     headingOffset,
@@ -586,17 +645,34 @@ export function addAirVehicle(universe, viewer, entry, idx = 0) {
   const collisionRadius = resolveCollisionRadius(entry)
   if (Number.isFinite(collisionRadius)) {
     v.collisionRadius = collisionRadius
-    v.collision_radius_m = collisionRadius
-    v.collisionRadiusM = collisionRadius
+  }
+
+  if (waypointRoute) {
+    try {
+      v.setWaypointRoute(waypointRoute, epoch)
+    } catch (err) {
+      if (typeof universe.removeObject === 'function') {
+        universe.removeObject(v)
+      }
+      console.log(`Skipping air vehicle ${name}: invalid waypoint route.`, err)
+      return
+    }
   }
 
   const color = resolveScenarioColor(entry.color)
   const headingDisplay = numberOr(heading, defined(v) ? v.heading : 0)
-  const desc = `Air vehicle initial state @ ${entry.epoch || 'current'}<br>` +
-    `lat=${latitude.toFixed(6)} deg, lon=${longitude.toFixed(6)} deg, alt=${altitude.toFixed(1)} m<br>` +
-    `v_ned[m/s]=${JSON.stringify([velocityNed.x, velocityNed.y, velocityNed.z])}<br>` +
-    `a_ned[m/s^2]=${JSON.stringify([accelerationNed.x, accelerationNed.y, accelerationNed.z])}<br>` +
-    `heading=${headingDisplay.toFixed(2)} deg`
+  const routeInfo = v.waypointRoute
+  const desc = routeInfo
+    ? `Air vehicle waypoint route @ ${formatJulianDateIso(routeInfo.startTime)}<br>` +
+      `lat=${latitude.toFixed(6)} deg, lon=${longitude.toFixed(6)} deg, alt=${altitude.toFixed(1)} m<br>` +
+      `mode=${routeInfo.mode}<br>` +
+      `waypoints=${routeInfo.waypoints.length}<br>` +
+      `heading=${headingDisplay.toFixed(2)} deg`
+    : `Air vehicle initial state @ ${entry.epoch || 'current'}<br>` +
+      `lat=${latitude.toFixed(6)} deg, lon=${longitude.toFixed(6)} deg, alt=${altitude.toFixed(1)} m<br>` +
+      `v_ned[m/s]=${JSON.stringify([velocityNed.x, velocityNed.y, velocityNed.z])}<br>` +
+      `a_ned[m/s^2]=${JSON.stringify([accelerationNed.x, accelerationNed.y, accelerationNed.z])}<br>` +
+      `heading=${headingDisplay.toFixed(2)} deg`
 
   const visualizerOptions = {
     path: { show: false, leadTime: 600, trailTime: 600, resolution: 5, material: color, width: 1 },
@@ -849,14 +925,17 @@ export function addScenarioObject(universe, viewer, obj) {
         speed: obj.speed,
         vertical_speed: obj.vertical_speed,
         climb_rate: obj.climb_rate,
-        collision_radius_m: obj.collision_radius_m,
-        collisionRadius: obj.collisionRadius,
-        collisionRadiusM: obj.collisionRadiusM,
         collision_radius: obj.collision_radius,
-        collisionRadiusMeters: obj.collisionRadiusMeters,
         epoch: obj.epoch,
         color: obj.color,
         model: obj.model,
+        route: obj.route,
+        waypoints: obj.waypoints,
+        route_mode: obj.route_mode,
+        loop: obj.loop,
+        start_time: obj.start_time,
+        default_speed: obj.default_speed,
+        loop_speed: obj.loop_speed,
       }, obj.__index)
       break
     }
