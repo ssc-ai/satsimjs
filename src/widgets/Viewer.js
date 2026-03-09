@@ -352,7 +352,6 @@ function mixinViewer(viewer, universe, options) {
     viewer.showVisual(viewer.sensorFovVisualizers, false)
     viewer.showVisual(viewer.beamVisualizers, false)
     viewer.setCameraMode("world")
-    cameraViewMenu.selectedIndex = 0
     origMorphTo2D.call(scene, duration)
   }
 
@@ -370,7 +369,6 @@ function mixinViewer(viewer, universe, options) {
     viewer.showVisual(viewer.sensorFovVisualizers, false)
     viewer.showVisual(viewer.beamVisualizers, false)
     viewer.setCameraMode("world")
-    cameraViewMenu.selectedIndex = 0
     origMorphToColumbusView.call(scene, duration)
   }
 
@@ -678,8 +676,7 @@ function mixinViewer(viewer, universe, options) {
     }
 
     if (viewer.cameraMode !== "world") {
-      viewer.setCameraMode("world")
-      cameraViewMenu.selectedIndex = 0
+      viewer.setCameraMode("world", undefined, { skipFlyHome: true })
     }
     viewer.referenceFrameView = ReferenceFrame.FIXED
     if (defined(trackedObjectCombo)) {
@@ -794,12 +791,16 @@ function mixinViewer(viewer, universe, options) {
     toolbar.addToolbarMenu([
       {
         text: "Sensor View @ " + sensor.name,
+        cameraMode: "sensor",
+        sensorRef: sensor,
         onselect: function () {
           viewer.setCameraMode("sensor", sensor)
         },
       },
       {
         text: "What's Up View @ " + sensor.name,
+        cameraMode: "up",
+        sensorRef: sensor,
         onselect: function () {
           viewer.setCameraMode("up", sensor)
         },
@@ -980,12 +981,56 @@ function mixinViewer(viewer, universe, options) {
   }
 
   /**
+   * Keep the camera view selector aligned with the active camera mode.
+   *
+   * Programmatic camera changes can bypass the toolbar's native `onchange`
+   * handler, so we resolve the matching menu option explicitly.
+   *
+   * @param {string} mode
+   * @param {ElectroOpicalSensor} sensor
+   */
+  function syncCameraViewMenuSelection(mode, sensor) {
+    if (!defined(cameraViewMenu) || !Array.isArray(cameraViewMenu.userOptions)) {
+      return
+    }
+
+    const activeSensor = sensor ?? viewer.trackedSensor
+    let selectedIndex = -1
+
+    for (let i = 0; i < cameraViewMenu.userOptions.length; i++) {
+      const option = cameraViewMenu.userOptions[i]
+      if (option?.cameraMode !== mode) {
+        continue
+      }
+      if (mode === "world" || option.sensorRef === activeSensor) {
+        selectedIndex = i
+        break
+      }
+    }
+
+    if (selectedIndex === -1 && mode !== "world") {
+      for (let i = 0; i < cameraViewMenu.userOptions.length; i++) {
+        if (cameraViewMenu.userOptions[i]?.cameraMode === mode) {
+          selectedIndex = i
+          break
+        }
+      }
+    }
+
+    if (selectedIndex !== -1) {
+      cameraViewMenu.selectedIndex = selectedIndex
+    }
+  }
+
+  /**
    * Set the camera mode.
    * 
    * @param {string} mode - The camera mode. "world", "sensor", "up".
    * @param {ElectroOpicalSensor} sensor - The sensor.
+   * @param {{skipFlyHome?: boolean}} [options] - Optional camera transition behavior.
    */
-  viewer.setCameraMode = function (mode, sensor) {
+  viewer.setCameraMode = function (mode, sensor, options = {}) {
+    const skipFlyHome = !!options.skipFlyHome
 
     if (mode === "up") {
       viewer.resolutionScale = 3.0;
@@ -1012,7 +1057,9 @@ function mixinViewer(viewer, universe, options) {
 
     } else if (mode === "world") {
       setCameraState(originalCameraState);
-      camera.flyHome();
+      if (!skipFlyHome) {
+        camera.flyHome();
+      }
     } else {
       console.log('unknown camera mode: ' + mode);
       return;
@@ -1060,6 +1107,7 @@ function mixinViewer(viewer, universe, options) {
     }
 
     viewer.cameraMode = mode;
+    syncCameraViewMenuSelection(mode, viewer.trackedSensor);
     updateCamera(scene, viewer.clock.currentTime);
   };
 
@@ -1167,6 +1215,20 @@ function mixinViewer(viewer, universe, options) {
     } else {
       visualizer.show = show;
     }
+  };
+
+  /**
+   * Enable/disable sensor field-of-view visualizers while keeping the toolbar
+   * toggle aligned with the active state.
+   *
+   * @param {boolean} enabled
+   */
+  viewer.setSensorFieldOfViewEnabled = function (enabled) {
+    const shouldEnable = !!enabled
+    if (sensorFieldOfViewButton.checked !== shouldEnable) {
+      sensorFieldOfViewButton.checked = shouldEnable
+    }
+    viewer.showVisual(viewer.sensorFovVisualizers, scene.mode === SceneMode.SCENE3D && shouldEnable)
   };
 
   /**
@@ -1372,6 +1434,7 @@ function mixinViewer(viewer, universe, options) {
   const cameraViewMenu = toolbar.addToolbarMenu([
     {
       text: "World View",
+      cameraMode: "world",
       onselect: function () {
         viewer.setCameraMode("world");
       }

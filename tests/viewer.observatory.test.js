@@ -150,22 +150,38 @@ jest.mock('../src/widgets/InfoBox.js', () => {
 })
 
 jest.mock('../src/widgets/Toolbar.js', () => {
-  return jest.fn().mockImplementation(() => ({
-    addToggleButton: jest.fn((text, checked) => ({ text, checked, enable: jest.fn() })),
-    addToolbarMenu: jest.fn(() => ({ userOptions: [], appendChild: jest.fn(), enable: jest.fn() })),
-    addToolbarButton: jest.fn(() => ({ enable: jest.fn() })),
-    addToolbarInput: jest.fn(() => ({ enable: jest.fn() })),
-    addToolbarComboMenu: jest.fn(() => ({
-      container: { addEventListener: jest.fn(), contains: jest.fn().mockReturnValue(false) },
-      input: { addEventListener: jest.fn(), value: '', focus: jest.fn() },
-      menu: { userOptions: [], appendChild: jest.fn(), enable: jest.fn(), style: {}, addEventListener: jest.fn() },
-      enable: jest.fn(),
-      showMenu: jest.fn(),
-      hideMenu: jest.fn()
-    })),
-    addSeparator: jest.fn(),
-    clear: jest.fn()
-  }))
+  return jest.fn().mockImplementation(() => {
+    const addToolbarMenu = jest.fn((options, menu) => {
+      const targetMenu = menu ?? {
+        userOptions: [],
+        appendChild: jest.fn(),
+        enable: jest.fn(),
+        selectedIndex: -1
+      }
+      if (!Array.isArray(targetMenu.userOptions)) {
+        targetMenu.userOptions = []
+      }
+      targetMenu.userOptions.push(...options)
+      return targetMenu
+    })
+
+    return {
+      addToggleButton: jest.fn((text, checked) => ({ text, checked, enable: jest.fn() })),
+      addToolbarMenu,
+      addToolbarButton: jest.fn(() => ({ enable: jest.fn() })),
+      addToolbarInput: jest.fn(() => ({ enable: jest.fn() })),
+      addToolbarComboMenu: jest.fn(() => ({
+        container: { addEventListener: jest.fn(), contains: jest.fn().mockReturnValue(false) },
+        input: { addEventListener: jest.fn(), value: '', focus: jest.fn() },
+        menu: { userOptions: [], appendChild: jest.fn(), enable: jest.fn(), selectedIndex: -1, style: {}, addEventListener: jest.fn() },
+        enable: jest.fn(),
+        showMenu: jest.fn(),
+        hideMenu: jest.fn()
+      })),
+      addSeparator: jest.fn(),
+      clear: jest.fn()
+    }
+  })
 })
 
 jest.mock('../src/engine/cesium/SensorFieldOfRegardVisualizer.js', () => {
@@ -511,5 +527,123 @@ describe('Viewer observatory behavior', () => {
 
     expect(viewer.camera.frustum.aspectRatio).toBeCloseTo(1600 / 900, 8)
     expect(viewer.camera.frustum.fov).toBeLessThan(initialFov)
+  })
+
+  test('syncs the camera view selector when camera mode changes programmatically', () => {
+    const viewer = makeViewerStub()
+    const universe = {
+      earth: {
+        update: jest.fn(),
+        worldToLocalTransform: {}
+      },
+      _trackables: []
+    }
+
+    mixinViewer(viewer, universe, {
+      infoBox2: false,
+      toolbar2: false,
+      showNightLayer: false,
+      showWeatherLayer: false,
+      enableObjectSearch: false
+    })
+
+    const sensor = {
+      name: 'HSV Zoom Sensor',
+      update: jest.fn(),
+      localToWorldTransform: {},
+      parent: { parent: { localToWorldTransform: {} } },
+      visualizer: {}
+    }
+
+    viewer.addSensorVisualizer({ name: 'HSV Laser Test Range' }, { name: 'HSV Gimbal' }, sensor)
+
+    const cameraViewMenu = viewer.toolbar.addToolbarMenu.mock.results[0].value
+
+    expect(cameraViewMenu.selectedIndex).toBe(-1)
+
+    viewer.setCameraMode('sensor', sensor)
+    expect(cameraViewMenu.selectedIndex).toBe(1)
+
+    viewer.setCameraMode('up', sensor)
+    expect(cameraViewMenu.selectedIndex).toBe(2)
+
+    viewer.setCameraMode('world')
+    expect(cameraViewMenu.selectedIndex).toBe(0)
+  })
+
+  test('disables FoV visualizers while keeping the toolbar toggle in sync', () => {
+    const viewer = makeViewerStub()
+    const universe = {
+      earth: {
+        update: jest.fn(),
+        worldToLocalTransform: {}
+      },
+      _trackables: []
+    }
+
+    mixinViewer(viewer, universe, {
+      infoBox2: false,
+      toolbar2: false,
+      showNightLayer: false,
+      showWeatherLayer: false,
+      enableObjectSearch: false
+    })
+
+    const sensor = {
+      name: 'HSV Zoom Sensor',
+      visualizer: {}
+    }
+
+    viewer.addSensorVisualizer({ name: 'HSV Laser Test Range' }, { name: 'HSV Gimbal' }, sensor)
+
+    const sensorFieldOfViewButton = viewer.toolbar.addToggleButton.mock.results[2].value
+
+    expect(sensorFieldOfViewButton.checked).toBe(true)
+    expect(viewer.sensorFovVisualizers[0].show).toBe(true)
+
+    viewer.setSensorFieldOfViewEnabled(false)
+
+    expect(sensorFieldOfViewButton.checked).toBe(false)
+    expect(viewer.sensorFovVisualizers[0].show).toBe(false)
+  })
+
+  test('tracked-object menu exits sensor view without flying home before tracking the object', () => {
+    const viewer = makeViewerStub()
+    const universe = {
+      earth: {
+        update: jest.fn(),
+        worldToLocalTransform: {}
+      },
+      _trackables: []
+    }
+
+    mixinViewer(viewer, universe, {
+      infoBox2: false,
+      toolbar2: false,
+      showNightLayer: false,
+      showWeatherLayer: false,
+      enableObjectSearch: false
+    })
+
+    const sensor = {
+      name: 'HSV Zoom Sensor',
+      update: jest.fn(),
+      localToWorldTransform: {},
+      parent: { parent: { localToWorldTransform: {} } },
+      visualizer: {}
+    }
+    viewer.addSensorVisualizer({ name: 'HSV Laser Test Range' }, { name: 'HSV Gimbal' }, sensor)
+    viewer.setCameraMode('sensor', sensor)
+
+    const object = { name: 'Drone-Alpha' }
+    viewer.addObjectVisualizer(object, 'desc', {})
+
+    const trackedObjectCombo = viewer.toolbar.addToolbarComboMenu.mock.results[0].value
+    trackedObjectCombo.menu.userOptions[0].onselect()
+
+    expect(viewer.cameraMode).toBe('world')
+    expect(viewer.camera.flyHome).not.toHaveBeenCalled()
+    expect(viewer.trackedEntity).toBe(object.visualizer)
+    expect(viewer.selectedEntity).toBe(object.visualizer)
   })
 })
