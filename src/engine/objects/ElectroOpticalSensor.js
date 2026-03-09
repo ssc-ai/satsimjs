@@ -1,30 +1,7 @@
 import { JulianDate } from 'cesium'
 import SimObject from './SimObject.js'
 import { normalizeSensorZoomConfig } from './observatoryUtils.js'
-
-/**
- * Clamp a numeric value into an inclusive range.
- *
- * @param {number} value
- * @param {number} min
- * @param {number} max
- * @returns {number}
- */
-function clamp(value, min, max) {
-  return Math.min(Math.max(value, min), max)
-}
-
-/**
- * Convert a value to a finite number or fall back to a default.
- *
- * @param {*} value
- * @param {number} fallback
- * @returns {number}
- */
-function numberOr(value, fallback) {
-  const n = Number(value)
-  return Number.isFinite(n) ? n : fallback
-}
+import { clamp, numberOr } from '../utils.js'
 
 /**
  * Resolve an ordered pair of zoom bounds, falling back to the fixed sensor FOV.

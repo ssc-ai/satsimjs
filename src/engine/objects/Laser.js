@@ -1,24 +1,8 @@
-import { Cartesian3 } from 'cesium'
+import { Cartesian3, JulianDate } from 'cesium'
 import ElectroOpicalSensor from './ElectroOpticalSensor.js'
+import { booleanOr, numberOr } from '../utils.js'
 
 const _scratchTargetLocal = new Cartesian3()
-
-function numberOr(value, fallback = 0) {
-  const n = Number(value)
-  return Number.isFinite(n) ? n : fallback
-}
-
-function booleanOr(value, fallback = false) {
-  if (value === undefined || value === null) {
-    return fallback
-  }
-  if (typeof value === 'string') {
-    const normalized = value.trim().toLowerCase()
-    if (normalized === 'true') return true
-    if (normalized === 'false') return false
-  }
-  return Boolean(value)
-}
 
 /**
  * Laser payload with EO-aligned pointing and beam-state metadata.
@@ -72,7 +56,7 @@ class Laser extends ElectroOpicalSensor {
 
   /**
    * @param {JulianDate} time
-   * @param {Universe} universe
+   * @param {Object} universe
    * @override
    */
   _update(time, universe) {
@@ -94,8 +78,8 @@ class Laser extends ElectroOpicalSensor {
 
     const trackables = Array.isArray(universe?.trackables)
       ? universe.trackables
-      : Array.isArray(universe?._trackables)
-        ? universe._trackables
+      : Array.isArray(universe?.trackables)
+        ? universe.trackables
         : []
     let closestHitDistance = undefined
 

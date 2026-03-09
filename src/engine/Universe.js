@@ -13,46 +13,17 @@ import Observatory from "./objects/Observatory.js";
 import { getObservatorySensors, normalizeSensorZoomConfig } from "./objects/observatoryUtils.js";
 import { Cartesian3, JulianDate, defined } from "cesium";
 import EventQueue from "./event/EventQueue.js";
-
-function numberOr(value, fallback = 0) {
-  const n = Number(value)
-  return Number.isFinite(n) ? n : fallback
-}
-
-function booleanOr(value, fallback = false) {
-  if (value === undefined || value === null) {
-    return fallback
-  }
-  if (typeof value === 'string') {
-    const normalized = value.trim().toLowerCase()
-    if (normalized === 'true') return true
-    if (normalized === 'false') return false
-  }
-  return Boolean(value)
-}
-
-function resolveEventVector3(value) {
-  if (value instanceof Cartesian3) {
-    return Cartesian3.clone(value)
-  }
-  if (Array.isArray(value) && value.length >= 3) {
-    return new Cartesian3(numberOr(value[0]), numberOr(value[1]), numberOr(value[2]))
-  }
-  if (defined(value) && typeof value === 'object') {
-    return new Cartesian3(numberOr(value.x), numberOr(value.y), numberOr(value.z))
-  }
-  return undefined
-}
+import { booleanOr, numberOr, toCartesian3OrUndefined } from "./utils.js";
 
 function resolveVelocityNedFromEventData(data, fallbackHeadingDeg = 0) {
   const vNedInput = data.velocity_ned ?? data.velocityNed ?? data.velocity
   if (defined(vNedInput)) {
-    return resolveEventVector3(vNedInput)
+    return toCartesian3OrUndefined(vNedInput)
   }
 
   const vEnuInput = data.velocity_enu ?? data.velocityEnu
   if (defined(vEnuInput)) {
-    const vEnu = resolveEventVector3(vEnuInput)
+    const vEnu = toCartesian3OrUndefined(vEnuInput)
     if (!defined(vEnu)) return undefined
     return new Cartesian3(vEnu.y, vEnu.x, -vEnu.z)
   }
@@ -80,12 +51,12 @@ function resolveVelocityNedFromEventData(data, fallbackHeadingDeg = 0) {
 function resolveAccelerationNedFromEventData(data) {
   const aNedInput = data.acceleration_ned ?? data.accelerationNed ?? data.acceleration
   if (defined(aNedInput)) {
-    return resolveEventVector3(aNedInput)
+    return toCartesian3OrUndefined(aNedInput)
   }
 
   const aEnuInput = data.acceleration_enu ?? data.accelerationEnu
   if (defined(aEnuInput)) {
-    const aEnu = resolveEventVector3(aEnuInput)
+    const aEnu = toCartesian3OrUndefined(aEnuInput)
     if (!defined(aEnu)) return undefined
     return new Cartesian3(aEnu.y, aEnu.x, -aEnu.z)
   }

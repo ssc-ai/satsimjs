@@ -1,16 +1,4 @@
-function numberOr(value, fallback = 0) {
-  const n = Number(value)
-  return Number.isFinite(n) ? n : fallback
-}
-
-function positiveNumberOr(value, fallback) {
-  const n = Number(value)
-  return (Number.isFinite(n) && n > 0) ? n : fallback
-}
-
-function clampSymmetric(value, maxAbs) {
-  return Math.max(-maxAbs, Math.min(maxAbs, value))
-}
+import { clampSymmetric, numberOr, positiveNumberOr } from '../utils.js'
 
 const DEFAULT_ACCEL_MULTIPLIER = 3.0
 const DEFAULT_SNAP_ERROR_DEG = 0.01
