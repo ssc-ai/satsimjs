@@ -621,7 +621,7 @@ describe('Universe', () => {
           ...mockLaser,
           name: options.name ?? mockLaser.name,
           maxRange: options.maxRange,
-          beamDiameter: options.beamDiameter,
+          beamDivergence: options.beamDivergence,
           power: options.power,
           active: options.active ?? false
         };
@@ -883,7 +883,7 @@ describe('Universe', () => {
         sensorMaxDistance: 7500,
         sensors: [
           { height: 2048, width: 2048, y_fov: 1, x_fov: 1, field_of_regard: [] },
-          { type: 'Laser', name: 'HSV HEL', beamDiameter: 0.05, power: 50000, active: true, maxRange: 6000, color: '#ff0000' }
+          { type: 'Laser', name: 'HSV HEL', beamDivergence: 0.05, power: 50000, active: true, maxRange: 6000, color: '#ff0000' }
         ]
       })
 
@@ -891,12 +891,12 @@ describe('Universe', () => {
       expect(Laser).toHaveBeenCalledTimes(1)
       expect(Laser).toHaveBeenCalledWith({
         name: 'HSV HEL',
-        beamDiameter: 0.05,
+        beamDivergence: 0.05,
         power: 50000,
         active: true,
         maxRange: 6000,
-        y_fov: 5,
-        x_fov: 5,
+        y_fov: 0.01,
+        x_fov: 0.01,
         field_of_regard: [],
         color: '#ff0000'
       })
@@ -914,7 +914,7 @@ describe('Universe', () => {
         altitude: 5,
         sensorMaxDistance: 7500,
         sensors: [
-          { type: 'Laser', name: 'HSV HEL', beamDiameter: 0.05, power: 50000, maxRange: 6000 }
+          { type: 'Laser', name: 'HSV HEL', beamDivergence: 0.05, power: 50000, maxRange: 6000 }
         ]
       })
 

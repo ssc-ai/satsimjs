@@ -176,11 +176,7 @@ jest.mock('../src/engine/cesium/SensorFieldOfVIewVisualizer.js', () => {
   return jest.fn().mockImplementation(() => ({ show: true }))
 })
 
-jest.mock('../src/engine/cesium/LaserFieldOfRegardVisualizer.js', () => {
-  return jest.fn().mockImplementation(() => ({ show: false }))
-})
-
-jest.mock('../src/engine/cesium/LaserFieldOfViewVisualizer.js', () => {
+jest.mock('../src/engine/cesium/LaserBeam.js', () => {
   return jest.fn().mockImplementation(() => ({ show: true }))
 })
 
@@ -237,8 +233,7 @@ import { mixinViewer } from '../src/widgets/Viewer.js'
 import Observatory from '../src/engine/objects/Observatory.js'
 import SensorFieldOfRegardVisualizer from '../src/engine/cesium/SensorFieldOfRegardVisualizer.js'
 import SensorFieldOfViewVisualizer from '../src/engine/cesium/SensorFieldOfVIewVisualizer.js'
-import LaserFieldOfRegardVisualizer from '../src/engine/cesium/LaserFieldOfRegardVisualizer.js'
-import LaserFieldOfViewVisualizer from '../src/engine/cesium/LaserFieldOfViewVisualizer.js'
+import LaserBeam from '../src/engine/cesium/LaserBeam.js'
 
 function makeViewerStub() {
   return {
@@ -399,7 +394,7 @@ describe('Viewer observatory behavior', () => {
     expect(fovColor?.label).toBe('#ff0000')
   })
 
-  test('dispatches laser payloads to laser placeholder visualizers', () => {
+  test('dispatches laser payloads to LaserBeam and preserves the fieldOfView alias', () => {
     const viewer = makeViewerStub()
     const universe = {
       earth: {
@@ -423,10 +418,53 @@ describe('Viewer observatory behavior', () => {
 
     viewer.addSensorVisualizer(site, gimbal, laser)
 
-    expect(LaserFieldOfRegardVisualizer).toHaveBeenCalledWith(viewer, site, laser, universe, expect.anything())
-    expect(LaserFieldOfViewVisualizer).toHaveBeenCalledWith(viewer, site, gimbal, laser, universe, expect.anything())
+    expect(LaserBeam).toHaveBeenCalledWith(viewer, laser, universe, expect.anything())
     expect(SensorFieldOfRegardVisualizer).not.toHaveBeenCalled()
     expect(SensorFieldOfViewVisualizer).not.toHaveBeenCalled()
+    expect(laser.visualizer.beam).toBe(laser.visualizer.fieldOfView)
+    expect(laser.visualizer.fieldOfRegard).toBeUndefined()
+    expect(viewer.beamVisualizers).toHaveLength(1)
+    expect(viewer.sensorFovVisualizers).toHaveLength(0)
+  })
+
+  test('adds a single beam toolbar toggle for laser payloads', () => {
+    const viewer = makeViewerStub()
+    const universe = {
+      earth: {
+        update: jest.fn(),
+        worldToLocalTransform: {}
+      },
+      _trackables: []
+    }
+
+    mixinViewer(viewer, universe, {
+      infoBox2: false,
+      toolbar2: false,
+      showNightLayer: false,
+      showWeatherLayer: false,
+      enableObjectSearch: false
+    })
+
+    const beam = { show: true }
+    const laser = {
+      name: 'HSV HEL',
+      type: 'Laser',
+      visualizer: {
+        beam,
+        fieldOfView: beam
+      }
+    }
+    const observatory = new Observatory({ name: 'HSV Laser Test Range' }, { name: 'HSV Gimbal' }, [laser])
+
+    const toolbar = { addToggleButton: jest.fn() }
+    viewer.applyDefaultToolbar(toolbar, { simObjectRef: observatory })
+
+    expect(toolbar.addToggleButton).toHaveBeenCalledTimes(1)
+    expect(toolbar.addToggleButton).toHaveBeenCalledWith(
+      'Beam: HSV HEL',
+      true,
+      expect.any(Function)
+    )
   })
 
   test('updates sensor-view camera frustum when sensor zoom changes', () => {

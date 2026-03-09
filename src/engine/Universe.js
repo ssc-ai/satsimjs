@@ -192,7 +192,7 @@ function normalizeObservatorySensorConfig(entry, observatoryName, sensorIndex = 
   if (payloadType === 'Laser') {
     return {
       type: 'Laser',
-      beamDiameter: Number(entry?.beamDiameter ?? entry?.beam_diameter),
+      beamDivergence: Number(entry?.beamDivergence ?? entry?.beam_divergence),
       power: Number(entry?.power),
       active: booleanOr(entry?.active, false),
       maxRange: Number(entry?.maxRange ?? entry?.max_range),
@@ -778,7 +778,7 @@ class Universe {
       if (sensorConfig.type === 'Laser') {
         const laser = new Laser({
           name: sensorConfig.name,
-          beamDiameter: sensorConfig.beamDiameter,
+          beamDivergence: sensorConfig.beamDivergence,
           power: sensorConfig.power,
           active: sensorConfig.active,
           maxRange: sensorConfig.maxRange,

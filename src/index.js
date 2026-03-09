@@ -26,6 +26,7 @@ export { default as CallbackPositionProperty } from './engine/cesium/CallbackPos
 export { default as CompoundElementVisualizer } from './engine/cesium/CompoundElementVisualizer.js'
 export { default as CoverageGridVisualizer } from './engine/cesium/CoverageGridVisualizer.js'
 export { default as GeoBeltVisualizer } from './engine/cesium/GeoBeltVisualizer.js'
+export { default as LaserBeam } from './engine/cesium/LaserBeam.js'
 export { default as SensorFieldOfRegardVisualizer } from './engine/cesium/SensorFieldOfRegardVisualizer.js'
 export { default as SensorFieldOfVIewVisualizer } from './engine/cesium/SensorFieldOfVIewVisualizer.js'
 

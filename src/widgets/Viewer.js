@@ -4,8 +4,7 @@ import InfoBox from "./InfoBox.js"
 import Toolbar from "./Toolbar.js"
 import SensorFieldOfRegardVisualizer from "../engine/cesium/SensorFieldOfRegardVisualizer.js"
 import SensorFieldOfViewVisualizer from "../engine/cesium/SensorFieldOfVIewVisualizer.js"
-import LaserFieldOfRegardVisualizer from "../engine/cesium/LaserFieldOfRegardVisualizer.js"
-import LaserFieldOfViewVisualizer from "../engine/cesium/LaserFieldOfViewVisualizer.js"
+import LaserBeam from "../engine/cesium/LaserBeam.js"
 import GeoBeltVisualizer from "../engine/cesium/GeoBeltVisualizer.js"
 import CallbackPositionProperty from "../engine/cesium/CallbackPositionProperty.js"
 import { createObjectPositionProperty, createObjectOrientationProperty, getObjectPositionInCesiumFrame } from "../engine/cesium/utils.js"
@@ -81,6 +80,7 @@ function mixinViewer(viewer, universe, options) {
   viewer.cameraMode = "world"
   viewer.sensorFovVisualizers = []
   viewer.sensorForVisualizers = []
+  viewer.beamVisualizers = []
   viewer.geoBeltVisualizer = new GeoBeltVisualizer(viewer)
   viewer.sensorGrids = []
   viewer.lastPicked = undefined
@@ -343,12 +343,14 @@ function mixinViewer(viewer, universe, options) {
     ecrButton.enable(false)
     sensorFieldOfRegardButton.enable(false)
     sensorFieldOfViewButton.enable(false)
+    beamButton.enable(false)
     geoButton.enable(false)
     cameraViewMenu.enable(false)
     if (defined(trackedObjectCombo)) trackedObjectCombo.enable(false)
     viewer.showVisual(viewer.geoBeltVisualizer, false)
     viewer.showVisual(viewer.sensorForVisualizers, false)
     viewer.showVisual(viewer.sensorFovVisualizers, false)
+    viewer.showVisual(viewer.beamVisualizers, false)
     viewer.setCameraMode("world")
     cameraViewMenu.selectedIndex = 0
     origMorphTo2D.call(scene, duration)
@@ -359,12 +361,14 @@ function mixinViewer(viewer, universe, options) {
     ecrButton.enable(false)
     sensorFieldOfRegardButton.enable(false)
     sensorFieldOfViewButton.enable(false)
+    beamButton.enable(false)
     geoButton.enable(false)
     cameraViewMenu.enable(false)
     if (defined(trackedObjectCombo)) trackedObjectCombo.enable(false)
     viewer.showVisual(viewer.geoBeltVisualizer, false)
     viewer.showVisual(viewer.sensorForVisualizers, false)
     viewer.showVisual(viewer.sensorFovVisualizers, false)
+    viewer.showVisual(viewer.beamVisualizers, false)
     viewer.setCameraMode("world")
     cameraViewMenu.selectedIndex = 0
     origMorphToColumbusView.call(scene, duration)
@@ -523,17 +527,20 @@ function mixinViewer(viewer, universe, options) {
       viewer.showVisual(viewer.geoBeltVisualizer, false)
       viewer.showVisual(viewer.sensorForVisualizers, false)
       viewer.showVisual(viewer.sensorFovVisualizers, false)
+      viewer.showVisual(viewer.beamVisualizers, false)
       // 3D mode
     } else {
       ecrButton.enable(true)
       sensorFieldOfRegardButton.enable(true)
       sensorFieldOfViewButton.enable(true)
+      beamButton.enable(true)
       geoButton.enable(true)
       cameraViewMenu.enable(true)
       if (defined(trackedObjectCombo)) trackedObjectCombo.enable(getTrackedObjectEnabledState())
       viewer.showVisual(viewer.geoBeltVisualizer, geoButton.checked)
       viewer.showVisual(viewer.sensorForVisualizers, sensorFieldOfRegardButton.checked)
       viewer.showVisual(viewer.sensorFovVisualizers, sensorFieldOfViewButton.checked)
+      viewer.showVisual(viewer.beamVisualizers, beamButton.checked)
     }
 
   })
@@ -767,17 +774,22 @@ function mixinViewer(viewer, universe, options) {
   viewer.addSensorVisualizer = function (site, gimbal, sensor) {
     const sensorColor = resolveSensorColor(sensor?.color)
     const isLaser = sensor?.type === 'Laser'
-    const FieldOfRegardVisualizer = isLaser ? LaserFieldOfRegardVisualizer : SensorFieldOfRegardVisualizer
-    const FieldOfViewVisualizer = isLaser ? LaserFieldOfViewVisualizer : SensorFieldOfViewVisualizer
+    if (isLaser) {
+      const beamViz = new LaserBeam(viewer, sensor, universe, sensorColor)
+      viewer.beamVisualizers.push(beamViz)
+      sensor.visualizer.beam = beamViz
+      sensor.visualizer.fieldOfView = beamViz
+      delete sensor.visualizer.fieldOfRegard
+    } else {
+      const forViz = new SensorFieldOfRegardVisualizer(viewer, site, sensor, universe, sensorColor)
+      forViz.show = false
+      viewer.sensorForVisualizers.push(forViz)
+      sensor.visualizer.fieldOfRegard = forViz
 
-    const forViz = new FieldOfRegardVisualizer(viewer, site, sensor, universe, sensorColor)
-    forViz.show = false
-    viewer.sensorForVisualizers.push(forViz)
-    sensor.visualizer.fieldOfRegard = forViz
-
-    const fovViz = new FieldOfViewVisualizer(viewer, site, gimbal, sensor, universe, sensorColor)
-    viewer.sensorFovVisualizers.push(fovViz)
-    sensor.visualizer.fieldOfView = fovViz
+      const fovViz = new SensorFieldOfViewVisualizer(viewer, site, gimbal, sensor, universe, sensorColor)
+      viewer.sensorFovVisualizers.push(fovViz)
+      sensor.visualizer.fieldOfView = fovViz
+    }
 
     toolbar.addToolbarMenu([
       {
@@ -1019,6 +1031,10 @@ function mixinViewer(viewer, universe, options) {
       v.outline = mode === "world";
     });
 
+    viewer.beamVisualizers.forEach(function (v) {
+      v.outline = mode === "world";
+    });
+
     // Hide Cesium point sprites in "up" mode (we draw a 2D overlay instead)
     if (mode === "up") {
       viewer._prevPointsVisible = viewer.points.show;
@@ -1057,6 +1073,15 @@ function mixinViewer(viewer, universe, options) {
       const obj = entity.simObjectRef
       if (obj instanceof Observatory) {
         getObservatorySensors(obj).forEach((sensor) => {
+          if (sensor?.type === 'Laser') {
+            if (!defined(sensor?.visualizer?.beam)) {
+              return
+            }
+            toolbar.addToggleButton(`Beam: ${sensor.name}`, sensor.visualizer.beam.show, (checked) => {
+              sensor.visualizer.beam.show = checked
+            });
+            return
+          }
           if (!defined(sensor?.visualizer?.fieldOfRegard) || !defined(sensor?.visualizer?.fieldOfView)) {
             return
           }
@@ -1326,6 +1351,9 @@ function mixinViewer(viewer, universe, options) {
   });
   const sensorFieldOfViewButton = toolbar.addToggleButton('FoV', true, (checked) => {
     viewer.showVisual(viewer.sensorFovVisualizers, checked);
+  });
+  const beamButton = toolbar.addToggleButton('Beam', true, (checked) => {
+    viewer.showVisual(viewer.beamVisualizers, checked);
   });
   const geoButton = toolbar.addToggleButton('GEO', true, (checked) => {
     viewer.showVisual(viewer.geoBeltVisualizer, checked);

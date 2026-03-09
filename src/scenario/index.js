@@ -177,7 +177,7 @@ function resolveScenarioSensorConfig(sensor) {
     return {
       type: 'Laser',
       ...(sensor.name != null ? { name: String(sensor.name) } : {}),
-      beamDiameter: Number(sensor.beamDiameter ?? sensor.beam_diameter),
+      beamDivergence: Number(sensor.beamDivergence ?? sensor.beam_divergence),
       power: Number(sensor.power),
       active: booleanOr(sensor.active, false),
       maxRange: Number(sensor.maxRange ?? sensor.max_range),
@@ -426,7 +426,7 @@ function createAirVehicleModelOrientationProperty(vehicle, universe, headingOffs
  * @param {Array<Object>} [obs.sensors] - Optional multi-payload definitions sharing one gimbal.
  *   EO entries may include `name`, `height`/`sensor_height`, `width`/`sensor_width`,
  *   `x_fov`, `y_fov`, `field_of_regard`, optional `zoom`, and optional `color`.
- *   Laser entries use `type: 'Laser'` plus `beam_diameter`, `power`, optional
+ *   Laser entries use `type: 'Laser'` plus `beam_divergence`, `power`, optional
  *   `active`, optional `max_range`, and optional placeholder `x_fov`, `y_fov`,
  *   `field_of_regard`, and `color`.
  * @param {Object<string, number|Object>} [obs.gimbal_slew_rates] - Optional per-axis slew settings.

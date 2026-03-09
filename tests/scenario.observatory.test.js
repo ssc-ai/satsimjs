@@ -221,7 +221,7 @@ describe('scenario observatory model support', () => {
         {
           type: 'Laser',
           name: 'HSV HEL',
-          beam_diameter: 0.05,
+          beam_divergence: 0.05,
           power: 50000,
           active: true,
           max_range: 6000,
@@ -235,12 +235,12 @@ describe('scenario observatory model support', () => {
       {
         type: 'Laser',
         name: 'HSV HEL',
-        beamDiameter: 0.05,
+        beamDivergence: 0.05,
         power: 50000,
         active: true,
         maxRange: 6000,
-        y_fov: 0.001,
-        x_fov: 0.001,
+        y_fov: 0.01,
+        x_fov: 0.01,
         field_of_regard: [],
         color: '#ff0000'
       }
