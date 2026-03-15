@@ -22,12 +22,18 @@ import {
   Matrix3,
   Matrix4,
   Quaternion,
-  Transforms,
-  Viewer
+  Transforms
 } from 'cesium'
-import Universe from '../engine/Universe.js'
 import { normalizeSensorZoomConfig } from '../engine/objects/observatoryUtils.js'
-import { booleanOr, numberOr, numberOrUndefined } from '../engine/utils.js'
+import { booleanOr, numberOr, numberOrUndefined, toCartesian3 } from '../engine/utils.js'
+import {
+  createClockContext,
+  resolveClockRangeValue,
+  resolveClockStepValue,
+  resolveScenarioClockTarget,
+  resolveScenarioJulianDateInput,
+  resolveScenarioViewerTarget
+} from './utils.js'
 
 const DEFAULT_MODEL_MINIMUM_PIXEL_SIZE = 64
 const DEFAULT_MODEL_MAXIMUM_SCALE = 20000
@@ -39,6 +45,7 @@ const _scratchBodyOffsetRotation = new Matrix3()
 const _scratchRotX = new Matrix3()
 const _scratchRotY = new Matrix3()
 const _scratchBodyToFixedRotation = new Matrix3()
+export { createClockContext } from './utils.js'
 
 function resolveScenarioColor(input) {
   if (Array.isArray(input) && input.length === 3) {
@@ -193,28 +200,15 @@ function resolveScenarioObservatorySensors(obs) {
   return obs.sensors.map((sensor) => resolveScenarioSensorConfig(sensor ?? {}))
 }
 
-function resolveVector3(value, fallback = [0, 0, 0]) {
-  if (value instanceof Cartesian3) {
-    return Cartesian3.clone(value)
-  }
-  if (Array.isArray(value) && value.length >= 3) {
-    return new Cartesian3(numberOr(value[0]), numberOr(value[1]), numberOr(value[2]))
-  }
-  if (defined(value) && typeof value === 'object') {
-    return new Cartesian3(numberOr(value.x), numberOr(value.y), numberOr(value.z))
-  }
-  return new Cartesian3(numberOr(fallback[0]), numberOr(fallback[1]), numberOr(fallback[2]))
-}
-
 function resolveVelocityNed(entry, headingDeg) {
   const vNedInput = entry.velocity_ned ?? entry.velocityNed ?? entry.velocity
   if (defined(vNedInput)) {
-    return resolveVector3(vNedInput)
+    return toCartesian3(vNedInput)
   }
 
   const vEnuInput = entry.velocity_enu ?? entry.velocityEnu
   if (defined(vEnuInput)) {
-    const vEnu = resolveVector3(vEnuInput)
+    const vEnu = toCartesian3(vEnuInput)
     return new Cartesian3(vEnu.y, vEnu.x, -vEnu.z)
   }
 
@@ -230,12 +224,12 @@ function resolveVelocityNed(entry, headingDeg) {
 function resolveAccelerationNed(entry) {
   const aNedInput = entry.acceleration_ned ?? entry.accelerationNed ?? entry.acceleration
   if (defined(aNedInput)) {
-    return resolveVector3(aNedInput)
+    return toCartesian3(aNedInput)
   }
 
   const aEnuInput = entry.acceleration_enu ?? entry.accelerationEnu
   if (defined(aEnuInput)) {
-    const aEnu = resolveVector3(aEnuInput)
+    const aEnu = toCartesian3(aEnuInput)
     return new Cartesian3(aEnu.y, aEnu.x, -aEnu.z)
   }
 
@@ -318,26 +312,6 @@ function formatJulianDateIso(value) {
   return value != null ? String(value) : 'current'
 }
 
-function resolveModelOffset(value) {
-  if (!defined(value)) {
-    return new Cartesian3()
-  }
-
-  if (value instanceof Cartesian3) {
-    return Cartesian3.clone(value)
-  }
-
-  if (Array.isArray(value) && value.length >= 3) {
-    return new Cartesian3(numberOr(value[0]), numberOr(value[1]), numberOr(value[2]))
-  }
-
-  if (typeof value === 'object') {
-    return new Cartesian3(numberOr(value.x), numberOr(value.y), numberOr(value.z))
-  }
-
-  return new Cartesian3()
-}
-
 function isNonZeroVector3(v) {
   return defined(v) && (v.x !== 0 || v.y !== 0 || v.z !== 0)
 }
@@ -387,7 +361,7 @@ function resolveScenarioModel(input) {
   const headingOffset = numberOr(modelGraphics.heading_offset)
   const pitchOffset = numberOr(modelGraphics.pitch_offset)
   const rollOffset = numberOr(modelGraphics.roll_offset)
-  const modelOffset = resolveModelOffset(modelGraphics.offset)
+  const modelOffset = toCartesian3(modelGraphics.offset)
 
   const minPixSize = numberOr(
     modelGraphics.min_pix_size,
@@ -523,7 +497,10 @@ export function addObservatory(universe, viewer, obs) {
     `Altitude: ${obs.altitude ?? 0} m</div>`
 
   const { visualizerModelOptions } = resolveScenarioModelVisualizerOptions(obs.model)
-  viewer.addObservatoryVisualizer(o, desc, visualizerModelOptions)
+  const scenarioViewer = resolveScenarioViewerTarget(viewer)
+  if (scenarioViewer?.addObservatoryVisualizer) {
+    scenarioViewer.addObservatoryVisualizer(o, desc, visualizerModelOptions)
+  }
 }
 
 /**
@@ -547,6 +524,8 @@ export function addObservatory(universe, viewer, obs) {
  * @param {string|Object} [entry.model] - Optional 3D model URI or Cesium model options.
  */
 export function addTwoBody(universe, viewer, entry, idx = 0) {
+  const clock = resolveScenarioClockTarget(viewer) ?? createClockContext()
+  const scenarioViewer = resolveScenarioViewerTarget(viewer)
   const name = entry.name || `TwoBody-${idx + 1}`
   if (universe.hasObject && universe.hasObject(name)) {
     console.log(`Satellite with name ${name} already exists, skipping creation.`)
@@ -563,7 +542,8 @@ export function addTwoBody(universe, viewer, entry, idx = 0) {
   const t = JulianDate.fromDate(new Date(entry.epoch))
   const orientation = entry.orientation || 'nadir'
 
-  const s = universe.addTwoBodySatellite(name, R, V, t || viewer.clock.currentTime.clone(), orientation, false, true)
+  const fallbackTime = resolveScenarioJulianDateInput(clock.currentTime, JulianDate.now())
+  const s = universe.addTwoBodySatellite(name, R, V, t || fallbackTime, orientation, false, true)
 
   const color = resolveScenarioColor(entry.color)
   const desc = `Two-body initial state @ ${entry.epoch || 'current'}<br>` +
@@ -573,11 +553,13 @@ export function addTwoBody(universe, viewer, entry, idx = 0) {
   const res = (s && s.period && s.eccentricity !== undefined) ? (s.period / (500 / (1 - s.eccentricity))) : 60
   const { visualizerModelOptions } = resolveScenarioModelVisualizerOptions(entry.model)
 
-  viewer.addObjectVisualizer(s, desc, {
-    path: { show: false, leadTime: lead, trailTime: trail, resolution: res, material: color, width: 1 },
-    point: { show: true, pixelSize: 2, color: color, outlineColor: color },
-    ...(visualizerModelOptions ?? {})
-  })
+  if (scenarioViewer?.addObjectVisualizer) {
+    scenarioViewer.addObjectVisualizer(s, desc, {
+      path: { show: false, leadTime: lead, trailTime: trail, resolution: res, material: color, width: 1 },
+      point: { show: true, pixelSize: 2, color: color, outlineColor: color },
+      ...(visualizerModelOptions ?? {})
+    })
+  }
 }
 
 /**
@@ -598,6 +580,8 @@ export function addTwoBody(universe, viewer, entry, idx = 0) {
  * @param {string|Object} [entry.model] - Optional 3D model URI or Cesium model options.
  */
 export function addAirVehicle(universe, viewer, entry, idx = 0) {
+  const clock = resolveScenarioClockTarget(viewer) ?? createClockContext()
+  const scenarioViewer = resolveScenarioViewerTarget(viewer)
   const name = entry.name || `AirVehicle-${idx + 1}`
   if (universe.hasObject && universe.hasObject(name)) {
     console.log(`Air vehicle with name ${name} already exists, skipping creation.`)
@@ -621,7 +605,7 @@ export function addAirVehicle(universe, viewer, entry, idx = 0) {
   const routeStart = waypointRoute?.startTime ? new Date(waypointRoute.startTime) : undefined
   const epoch = entry.epoch
     ? JulianDate.fromDate(new Date(entry.epoch))
-    : (routeStart && Number.isFinite(routeStart.getTime()) ? JulianDate.fromDate(routeStart) : viewer.clock.currentTime.clone())
+    : (routeStart && Number.isFinite(routeStart.getTime()) ? JulianDate.fromDate(routeStart) : resolveScenarioJulianDateInput(clock.currentTime, JulianDate.now()))
   const {
     modelGraphics,
     headingOffset,
@@ -682,7 +666,9 @@ export function addAirVehicle(universe, viewer, entry, idx = 0) {
   if (defined(modelGraphics)) {
     visualizerOptions.orientation = createAirVehicleModelOrientationProperty(v, universe, headingOffset, pitchOffset, rollOffset)
   }
-  viewer.addObjectVisualizer(v, desc, visualizerOptions)
+  if (scenarioViewer?.addObjectVisualizer) {
+    scenarioViewer.addObjectVisualizer(v, desc, visualizerOptions)
+  }
 }
 
 /**
@@ -705,11 +691,14 @@ export function addSatelliteFromTLE(universe, viewer, name, tle1, tle2, orientat
   const res = (s && s.period && s.eccentricity !== undefined) ? (s.period / (500 / (1 - s.eccentricity))) : 60
   const { visualizerModelOptions } = resolveScenarioModelVisualizerOptions(modelInput)
   
-  viewer.addObjectVisualizer(s, 'TLE', {
-    path: { show: false, leadTime: lead, trailTime: trail, resolution: res, material: color, width: 1 },
-    point: { show: true, pixelSize: 2, color: color, outlineColor: color },
-    ...(visualizerModelOptions ?? {})
-  })
+  const scenarioViewer = resolveScenarioViewerTarget(viewer)
+  if (scenarioViewer?.addObjectVisualizer) {
+    scenarioViewer.addObjectVisualizer(s, 'TLE', {
+      path: { show: false, leadTime: lead, trailTime: trail, resolution: res, material: color, width: 1 },
+      point: { show: true, pixelSize: 2, color: color, outlineColor: color },
+      ...(visualizerModelOptions ?? {})
+    })
+  }
 }
 
 /**
@@ -785,64 +774,38 @@ export async function addTleCatalog(universe, viewer, obj) {
  * @param {{start_time?: string, end_time?: string, time_step?: number, clock_step?: string, clock_range?: string, current_time?: string, playback_state?: string}} params - Parameters.
  */
 export function applySimulationParameters(viewer, params) {
+  const clock = resolveScenarioClockTarget(viewer) ?? createClockContext()
   if (defined(params.start_time)) {
     const start = JulianDate.fromDate(new Date(params.start_time))
     const stop = params.end_time ? JulianDate.fromDate(new Date(params.end_time)) : JulianDate.addSeconds(start, 24 * 3600, new JulianDate())
     const current = params.current_time ? JulianDate.fromDate(new Date(params.current_time)) : start.clone()
-    viewer.clock.startTime = start.clone()
-    viewer.clock.currentTime = current.clone()
-    viewer.clock.stopTime = stop.clone()
+    clock.startTime = start.clone()
+    clock.currentTime = current.clone()
+    clock.stopTime = stop.clone()
   }
-  if (defined(params.time_step)) viewer.clock.multiplier = Number(params.time_step)
+  if (defined(params.time_step)) clock.multiplier = Number(params.time_step)
   if (defined(params.clock_step)) {
-    const clockStepValue = String(params.clock_step).toLowerCase()
-    switch (clockStepValue) {
-      case 'tick_dependent':
-        viewer.clock.clockStep = 0
-        break
-      case 'system_clock_multiplier':
-        viewer.clock.clockStep = 1
-        break
-      case 'system_clock':
-        viewer.clock.clockStep = 2
-        break
-      default:
-        viewer.clock.clockStep = Number(params.clock_step)
-        break
-    }
+    clock.clockStep = resolveClockStepValue(params.clock_step, clock.clockStep)
   }
   if (defined(params.clock_range)) {
-    const clockRangeValue = String(params.clock_range).toLowerCase()
-    switch (clockRangeValue) {
-      case 'unbounded':
-        viewer.clock.clockRange = 0
-        break
-      case 'clamped':
-        viewer.clock.clockRange = 1
-        break
-      case 'loop_stop':
-        viewer.clock.clockRange = 2
-        break
-      default:
-        viewer.clock.clockRange = Number(params.clock_range)
-        break
-    }
+    clock.clockRange = resolveClockRangeValue(params.clock_range, clock.clockRange)
   }
   if (defined(params.playback_state)) {
     const state = String(params.playback_state).toLowerCase()
     switch (state) {
       case 'play':
-        viewer.clock.shouldAnimate = true
+        clock.shouldAnimate = true
         break
       case 'pause':
       case 'stop':
-        viewer.clock.shouldAnimate = false
+        clock.shouldAnimate = false
         break
       default:
-        viewer.clock.shouldAnimate = Boolean(params.playback_state)
+        clock.shouldAnimate = Boolean(params.playback_state)
         break
     }
   }
+  return clock
 }
 
 /**
@@ -964,6 +927,7 @@ export function addScenarioObject(universe, viewer, obj) {
  * @param {Array<Object>} events - Array of events with `time` and `type`.
  */
 export function scheduleScenarioEvents(universe, viewer, events) {
+  const clock = resolveScenarioClockTarget(viewer) ?? createClockContext()
   if (!Array.isArray(events) || events.length === 0) return
 
   // Convert scenario event times to absolute JulianDate and enqueue
@@ -972,7 +936,7 @@ export function scheduleScenarioEvents(universe, viewer, events) {
     let jd
     if (typeof t === 'number') {
       // relative seconds from scenario start
-      jd = JulianDate.addSeconds(viewer.clock.startTime, t, new JulianDate())
+      jd = JulianDate.addSeconds(clock.startTime, t, new JulianDate())
     } else if (typeof t === 'string') {
       jd = JulianDate.fromDate(new Date(t))
     } else if (t && t.toString) {
@@ -1003,6 +967,12 @@ export function loadScenario(universe, viewer, config) {
   if (Array.isArray(config.events)) scheduleScenarioEvents(universe, viewer, config.events)
 }
 
+export function loadScenarioRuntime(universe, clockContext, config) {
+  const clock = resolveScenarioClockTarget(clockContext) ?? createClockContext()
+  loadScenario(universe, clock, config)
+  return clock
+}
+
 /**
  * Parse scenario JSON text and apply it.
  *
@@ -1013,4 +983,9 @@ export function loadScenario(universe, viewer, config) {
 export function loadScenarioFromText(universe, viewer, text) {
   const cfg = JSON.parse(text || '{}')
   loadScenario(universe, viewer, cfg)
+}
+
+export function loadScenarioFromTextRuntime(universe, clockContext, text) {
+  const cfg = JSON.parse(text || '{}')
+  return loadScenarioRuntime(universe, clockContext, cfg)
 }
