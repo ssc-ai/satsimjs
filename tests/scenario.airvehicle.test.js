@@ -327,6 +327,26 @@ describe('scenario air vehicle support', () => {
     })
   })
 
+  test('anchors waypoint route start_time now to the scenario start time', () => {
+    addScenarioObject(universe, viewer, {
+      type: 'AirVehicle',
+      name: 'Drone-Route-Now',
+      route: {
+        start_time: 'now',
+        waypoints: [
+          { latitude: 34.25, longitude: -117.1, altitude: 1200 },
+          { latitude: 34.26, longitude: -117.11, altitude: 1250, offset: 30 },
+        ]
+      }
+    })
+
+    const createdVehicle = universe.addAirVehicle.mock.results[0].value
+    expect(createdVehicle.setWaypointRoute).toHaveBeenCalledTimes(1)
+    const route = createdVehicle.setWaypointRoute.mock.calls[0][0]
+    expect(route.startTime).toBeInstanceOf(JulianDate)
+    expect(JulianDate.toDate(route.startTime).toISOString()).toBe('2024-01-01T00:00:00.000Z')
+  })
+
   test('removes the created vehicle and skips visualization when waypoint route setup fails', () => {
     universe.addAirVehicle.mockImplementationOnce((name, latitude, longitude, altitude, velocityNed, accelerationNed, heading) => ({
       name,

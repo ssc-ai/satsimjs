@@ -28,9 +28,11 @@ import { normalizeSensorZoomConfig } from '../engine/objects/observatoryUtils.js
 import { booleanOr, numberOr, numberOrUndefined, toCartesian3 } from '../engine/utils.js'
 import {
   createClockContext,
+  isScenarioNowLiteral,
   resolveClockRangeValue,
   resolveClockStepValue,
   resolveScenarioClockTarget,
+  resolveScenarioDurationSeconds,
   resolveScenarioJulianDateInput,
   resolveScenarioViewerTarget
 } from './utils.js'
@@ -589,6 +591,14 @@ export function addAirVehicle(universe, viewer, entry, idx = 0) {
   }
 
   const waypointRoute = resolveScenarioWaypointRoute(entry)
+  const scenarioStartTime = resolveScenarioJulianDateInput(clock.startTime, JulianDate.now())
+  if (waypointRoute?.startTime != null && isScenarioNowLiteral(waypointRoute.startTime)) {
+    waypointRoute.startTime = resolveScenarioJulianDateInput(
+      waypointRoute.startTime,
+      undefined,
+      scenarioStartTime
+    )
+  }
   const initialWaypoint = waypointRoute?.waypoints?.[0]
   const latitude = numberOr(entry.latitude ?? entry.lat ?? initialWaypoint?.latitude, NaN)
   const longitude = numberOr(entry.longitude ?? entry.lon ?? entry.lng ?? initialWaypoint?.longitude, NaN)
@@ -602,10 +612,16 @@ export function addAirVehicle(universe, viewer, entry, idx = 0) {
   const heading = headingInput == null ? undefined : numberOr(headingInput)
   const velocityNed = resolveVelocityNed(entry, heading ?? 0)
   const accelerationNed = resolveAccelerationNed(entry)
-  const routeStart = waypointRoute?.startTime ? new Date(waypointRoute.startTime) : undefined
-  const epoch = entry.epoch
-    ? JulianDate.fromDate(new Date(entry.epoch))
-    : (routeStart && Number.isFinite(routeStart.getTime()) ? JulianDate.fromDate(routeStart) : resolveScenarioJulianDateInput(clock.currentTime, JulianDate.now()))
+  const routeStart = resolveScenarioJulianDateInput(
+    waypointRoute?.startTime,
+    undefined,
+    scenarioStartTime
+  )
+  const epoch = resolveScenarioJulianDateInput(
+    entry.epoch,
+    routeStart ?? resolveScenarioJulianDateInput(clock.currentTime, scenarioStartTime, scenarioStartTime),
+    scenarioStartTime
+  )
   const {
     modelGraphics,
     headingOffset,
@@ -771,14 +787,48 @@ export async function addTleCatalog(universe, viewer, obj) {
  * Apply simulation parameters to the viewer clock.
  *
  * @param {Viewer} viewer - The SatSim viewer.
- * @param {{start_time?: string, end_time?: string, time_step?: number, clock_step?: string, clock_range?: string, current_time?: string, playback_state?: string}} params - Parameters.
+ * @param {{
+ *   start_time?: string,
+ *   end_time?: string,
+ *   duration_sec?: number,
+ *   duration_seconds?: number,
+ *   time_step?: number,
+ *   clock_step?: string,
+ *   clock_range?: string,
+ *   current_time?: string,
+ *   playback_state?: string
+ * }} params - Parameters.
  */
 export function applySimulationParameters(viewer, params) {
   const clock = resolveScenarioClockTarget(viewer) ?? createClockContext()
-  if (defined(params.start_time)) {
-    const start = JulianDate.fromDate(new Date(params.start_time))
-    const stop = params.end_time ? JulianDate.fromDate(new Date(params.end_time)) : JulianDate.addSeconds(start, 24 * 3600, new JulianDate())
-    const current = params.current_time ? JulianDate.fromDate(new Date(params.current_time)) : start.clone()
+  if (
+    defined(params.start_time) ||
+    defined(params.end_time) ||
+    defined(params.current_time) ||
+    defined(params.duration_sec) ||
+    defined(params.duration_seconds)
+  ) {
+    const nowAnchor = resolveScenarioJulianDateInput(clock.startTime, clock.currentTime, clock.currentTime) ?? JulianDate.now()
+    const existingStart = resolveScenarioJulianDateInput(clock.startTime, nowAnchor, nowAnchor) ?? JulianDate.clone(nowAnchor, new JulianDate())
+    const existingCurrent = resolveScenarioJulianDateInput(clock.currentTime, existingStart, nowAnchor) ?? JulianDate.clone(existingStart, new JulianDate())
+    const existingStop = resolveScenarioJulianDateInput(
+      clock.stopTime,
+      JulianDate.addSeconds(existingStart, 24 * 3600, new JulianDate()),
+      nowAnchor
+    )
+    const start = defined(params.start_time)
+      ? resolveScenarioJulianDateInput(params.start_time, existingStart, nowAnchor)
+      : existingStart
+    const stopDefault = JulianDate.addSeconds(start, 24 * 3600, new JulianDate())
+    const durationSec = resolveScenarioDurationSeconds(params.duration_sec ?? params.duration_seconds)
+    const stop = defined(params.end_time)
+      ? resolveScenarioJulianDateInput(params.end_time, stopDefault, nowAnchor)
+      : (durationSec !== undefined
+          ? JulianDate.addSeconds(start, durationSec, new JulianDate())
+          : (defined(params.start_time) ? stopDefault : existingStop))
+    const current = defined(params.current_time)
+      ? resolveScenarioJulianDateInput(params.current_time, start, nowAnchor)
+      : (defined(params.start_time) ? JulianDate.clone(start, new JulianDate()) : existingCurrent)
     clock.startTime = start.clone()
     clock.currentTime = current.clone()
     clock.stopTime = stop.clone()

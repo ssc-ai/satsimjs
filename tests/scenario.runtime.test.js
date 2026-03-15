@@ -58,6 +58,24 @@ describe('Scenario runtime clock support', () => {
     expect(clock.shouldAnimate).toBe(true)
   })
 
+  test('applySimulationParameters supports start_time now with duration_sec', () => {
+    const anchor = JulianDate.fromDate(new Date('2026-04-03T16:00:00Z'))
+    const clock = createClockContext({
+      startTime: anchor,
+      currentTime: anchor,
+      stopTime: JulianDate.addSeconds(anchor, 60, new JulianDate())
+    })
+
+    applySimulationParameters(clock, {
+      start_time: 'now',
+      duration_sec: 3600
+    })
+
+    expect(JulianDate.toDate(clock.startTime).toISOString()).toBe('2026-04-03T16:00:00.000Z')
+    expect(JulianDate.toDate(clock.currentTime).toISOString()).toBe('2026-04-03T16:00:00.000Z')
+    expect(JulianDate.toDate(clock.stopTime).toISOString()).toBe('2026-04-03T17:00:00.000Z')
+  })
+
   test('loadScenarioRuntime loads objects and events without a viewer', () => {
     const universe = new Universe()
     const clock = createClockContext()
