@@ -108,6 +108,37 @@ describe('Scenario event scheduling', () => {
     expect(gimbal.el).toBeCloseTo(17, 8)
   })
 
+  test('setFsmAxes and stepFsmAxes use canonical tip/tilt axis inputs', () => {
+    const fsm = {
+      tip: 1,
+      tilt: -2,
+      update: jest.fn()
+    }
+    const gimbal = { trackMode: 'fixed', trackObject: null, update: jest.fn() }
+    const site = { name: 'OBS', update: jest.fn() }
+    const sensor = { update: jest.fn() }
+    universe._observatories.push({ site, gimbal, fsm, sensor, sensors: [sensor] })
+
+    scheduleScenarioEvents(universe, viewer, [
+      {
+        time: 0,
+        type: 'setFsmAxes',
+        observer: 'OBS',
+        axes: { tip: 3, tilt: 4 }
+      },
+      {
+        time: 0,
+        type: 'stepFsmAxes',
+        observer: 'OBS',
+        deltas: { tip: -0.5, tilt: 0.25 }
+      }
+    ])
+
+    universe.update(start)
+    expect(fsm.tip).toBeCloseTo(2.5, 8)
+    expect(fsm.tilt).toBeCloseTo(4.25, 8)
+  })
+
   test('setSensorZoom defaults to the primary sensor and preserves tracking state', () => {
     const trackedObject = { name: 'SAT' }
     const primarySensor = { name: 'Primary', setZoomLevel: jest.fn() }

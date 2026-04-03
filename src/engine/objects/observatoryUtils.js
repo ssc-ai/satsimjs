@@ -21,9 +21,6 @@ function getObservatorySensors(observatory) {
 /**
  * Normalize optional optical zoom configuration into canonical sensor keys.
  *
- * Snake_case and camelCase aliases are accepted so scenario input, runtime
- * configuration, and direct sensor construction can all share one parser.
- *
  * @param {Object|undefined} input
  * @returns {{min_x_fov?: number, max_x_fov?: number, min_y_fov?: number, max_y_fov?: number, initial_zoom_level?: number}|undefined}
  */
@@ -33,25 +30,134 @@ function normalizeSensorZoomConfig(input) {
   }
 
   const out = {}
-  const mappings = [
-    ['min_x_fov', ['min_x_fov', 'minXFov']],
-    ['max_x_fov', ['max_x_fov', 'maxXFov']],
-    ['min_y_fov', ['min_y_fov', 'minYFov']],
-    ['max_y_fov', ['max_y_fov', 'maxYFov']],
-    ['initial_zoom_level', ['initial_zoom_level', 'initialZoomLevel']]
-  ]
-
-  mappings.forEach(([canonicalKey, aliases]) => {
-    for (let i = 0; i < aliases.length; i++) {
-      const value = Number(input[aliases[i]])
-      if (Number.isFinite(value)) {
-        out[canonicalKey] = value
-        break
-      }
+  const keys = ['min_x_fov', 'max_x_fov', 'min_y_fov', 'max_y_fov', 'initial_zoom_level']
+  keys.forEach((key) => {
+    const value = Number(input[key])
+    if (Number.isFinite(value)) {
+      out[key] = value
     }
   })
 
   return Object.keys(out).length > 0 ? out : undefined
+}
+
+/**
+ * Normalize a single per-axis slew-rate entry into the runtime shape used by
+ * gimbals and fast steering mirrors.
+ *
+ * @param {number|string|Object|undefined} entry
+ * @returns {{maxRateDegPerSec:number, maxAccelDegPerSec2?:number}|undefined}
+ */
+function normalizeAxisSlewRateEntry(entry) {
+  let maxRateDegPerSec
+  let maxAccelDegPerSec2
+
+  if (typeof entry === 'number' || typeof entry === 'string') {
+    maxRateDegPerSec = Number(entry)
+  } else if (entry != null && typeof entry === 'object' && !Array.isArray(entry)) {
+    maxRateDegPerSec = Number(entry.maxRateDegPerSec)
+    maxAccelDegPerSec2 = Number(entry.maxAccelDegPerSec2)
+  }
+
+  if (!(Number.isFinite(maxRateDegPerSec) && maxRateDegPerSec > 0)) {
+    return undefined
+  }
+
+  const out = { maxRateDegPerSec }
+  if (Number.isFinite(maxAccelDegPerSec2) && maxAccelDegPerSec2 > 0) {
+    out.maxAccelDegPerSec2 = maxAccelDegPerSec2
+  }
+  return out
+}
+
+/**
+ * Normalize a dictionary of per-axis slew-rate settings.
+ *
+ * @param {Object|undefined} input
+ * @returns {Object<string, {maxRateDegPerSec:number, maxAccelDegPerSec2?:number}>|undefined}
+ */
+function normalizeAxisSlewRates(input) {
+  if (input == null || typeof input !== 'object' || Array.isArray(input)) {
+    return undefined
+  }
+
+  const out = {}
+  Object.keys(input).forEach((axisName) => {
+    const axis = String(axisName).trim()
+    if (!axis) return
+    const normalized = normalizeAxisSlewRateEntry(input[axisName])
+    if (normalized) {
+      out[axis] = normalized
+    }
+  })
+  return Object.keys(out).length > 0 ? out : undefined
+}
+
+/**
+ * Normalize an observatory payload type.
+ *
+ * @param {string|undefined} payloadType
+ * @returns {string|undefined}
+ */
+function normalizeObservatoryPayloadType(payloadType) {
+  const normalized = String(payloadType ?? '').trim().toLowerCase()
+  if (!normalized) return undefined
+  return normalized === 'laser' ? 'Laser' : 'ElectroOpticalSensor'
+}
+
+/**
+ * Generate a default payload name for an observatory payload slot.
+ *
+ * @param {string} observatoryName
+ * @param {number} [sensorIndex=0]
+ * @param {string|undefined} [payloadType]
+ * @returns {string}
+ */
+function defaultObservatorySensorName(observatoryName, sensorIndex = 0, payloadType = undefined) {
+  const baseName = String(observatoryName ?? '').trim()
+  const payloadBase = payloadType === 'Laser'
+    ? (baseName ? `${baseName} Laser` : 'Laser')
+    : (baseName ? `${baseName} Sensor` : 'Sensor')
+  return sensorIndex === 0 ? payloadBase : `${payloadBase} ${sensorIndex + 1}`
+}
+
+/**
+ * Generate a default fast steering mirror name for an observatory.
+ *
+ * @param {string} observatoryName
+ * @returns {string}
+ */
+function defaultObservatoryFsmName(observatoryName) {
+  const baseName = String(observatoryName ?? '').trim()
+  return baseName ? `${baseName} FSM` : 'FastSteeringMirror'
+}
+
+/**
+ * Normalize fast steering mirror config into canonical runtime keys.
+ *
+ * FSM angle inputs intentionally use the plain axis names `tip` and `tilt` to
+ * match the runtime object and event axes.
+ *
+ * @param {Object|undefined} input
+ * @param {string} observatoryName
+ * @returns {{name:string, tip?:number, tilt?:number, slewRates?:Object}|undefined}
+ */
+function normalizeObservatoryFsmConfig(input, observatoryName) {
+  if (input == null || typeof input !== 'object' || Array.isArray(input)) {
+    return undefined
+  }
+
+  const name = String(input.name ?? '').trim() || defaultObservatoryFsmName(observatoryName)
+  const tip = Number(input.tip)
+  const tilt = Number(input.tilt)
+  const slewRates = normalizeAxisSlewRates(input.slewRates)
+
+  return {
+    name,
+    ...(Number.isFinite(tip) ? { tip } : {}),
+    ...(Number.isFinite(tilt) ? { tilt } : {}),
+    ...(slewRates ? { slewRates } : {})
+  }
 }
 
 /**
@@ -78,7 +184,13 @@ function isSensorVisible(sensor, az, el) {
 }
 
 export {
+  defaultObservatoryFsmName,
+  defaultObservatorySensorName,
   getObservatorySensors,
+  normalizeAxisSlewRateEntry,
+  normalizeAxisSlewRates,
+  normalizeObservatoryFsmConfig,
+  normalizeObservatoryPayloadType,
   normalizeSensorZoomConfig,
   isSensorVisible
 }

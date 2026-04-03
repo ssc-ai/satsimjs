@@ -105,7 +105,7 @@ describe('scenario observatory model support', () => {
       y_fov: 1,
       x_fov: 1,
       gimbal_slew_rates: {
-        az: { max_rate: 8, max_accel: 24 },
+        az: { maxRateDegPerSec: 8, maxAccelDegPerSec2: 24 },
         el: 6
       }
     })
@@ -137,6 +137,35 @@ describe('scenario observatory model support', () => {
     expect(config.sensorMaxDistance).toBe(7500)
   })
 
+  test('normalizes optional FSM config and aliases into observatory creation', () => {
+    addScenarioObject(universe, viewer, {
+      type: 'GroundEOObservatory',
+      name: 'HSV Laser Test Range',
+      latitude: 34.6707,
+      longitude: -86.6508,
+      altitude: 5,
+      fsm: {
+        tip: 1.5,
+        tilt: -2.5,
+        slewRates: {
+          tip: { maxRateDegPerSec: 20 },
+          tilt: { maxRateDegPerSec: 30, maxAccelDegPerSec2: 60 }
+        }
+      }
+    })
+
+    const [config] = universe.addGroundElectroOpticalObservatory.mock.calls[0]
+    expect(config.fsm).toEqual({
+      name: 'HSV Laser Test Range FSM',
+      tip: 1.5,
+      tilt: -2.5,
+      slewRates: {
+        tip: { maxRateDegPerSec: 20 },
+        tilt: { maxRateDegPerSec: 30, maxAccelDegPerSec2: 60 }
+      }
+    })
+  })
+
   test('normalizes single-sensor zoom config aliases into observatory creation', () => {
     addScenarioObject(universe, viewer, {
       type: 'GroundEOObservatory',
@@ -149,11 +178,11 @@ describe('scenario observatory model support', () => {
       y_fov: 5,
       x_fov: 5,
       zoom: {
-        minXFov: 0.05,
+        min_x_fov: 0.05,
         max_x_fov: 5,
-        minYFov: 0.05,
+        min_y_fov: 0.05,
         max_y_fov: 5,
-        initialZoomLevel: 0.25
+        initial_zoom_level: 0.25
       }
     })
 
@@ -186,7 +215,7 @@ describe('scenario observatory model support', () => {
           y_fov: 1,
           x_fov: 1,
           field_of_regard: [],
-          zoom: { minXFov: 0.05, maxXFov: 1, minYFov: 0.05, maxYFov: 1 }
+          zoom: { min_x_fov: 0.05, max_x_fov: 1, min_y_fov: 0.05, max_y_fov: 1 }
         },
         { name: 'HSV Wide', sensor_height: 1024, sensor_width: 1024, y_fov: 8, x_fov: 8, field_of_regard: [], color: '#ff0000' }
       ]

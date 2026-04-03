@@ -3,6 +3,20 @@ import SimObject from './SimObject.js'
 import { normalizeSensorZoomConfig } from './observatoryUtils.js'
 import { clamp, numberOr } from '../utils.js'
 
+function canonicalizeZoomInput(input) {
+  if (input == null || typeof input !== 'object' || Array.isArray(input)) {
+    return undefined
+  }
+
+  return {
+    min_x_fov: input.min_x_fov ?? input.minXFov,
+    max_x_fov: input.max_x_fov ?? input.maxXFov,
+    min_y_fov: input.min_y_fov ?? input.minYFov,
+    max_y_fov: input.max_y_fov ?? input.maxYFov,
+    initial_zoom_level: input.initial_zoom_level ?? input.initialZoomLevel
+  }
+}
+
 /**
  * Resolve an ordered pair of zoom bounds, falling back to the fixed sensor FOV.
  *
@@ -90,7 +104,7 @@ class ElectroOpicalSensor extends SimObject {
     this.field_of_regard = field_of_regard
     this.zoomLevel = 0
 
-    const zoom = normalizeSensorZoomConfig(options?.zoom)
+    const zoom = normalizeSensorZoomConfig(canonicalizeZoomInput(options?.zoom))
     const xBounds = normalizeZoomBounds(
       zoom?.min_x_fov,
       zoom?.max_x_fov,

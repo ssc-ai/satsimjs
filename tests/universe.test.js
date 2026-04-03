@@ -6,6 +6,7 @@ import SGP4Satellite from '../src/engine/objects/SGP4Satellite.js';
 import EarthGroundStation from '../src/engine/objects/EarthGroundStation.js';
 import AzElGimbal from '../src/engine/objects/AzElGimbal.js';
 import ElectroOpicalSensor from '../src/engine/objects/ElectroOpticalSensor.js';
+import FastSteeringMirror from '../src/engine/objects/FastSteeringMirror.js';
 import Laser from '../src/engine/objects/Laser.js';
 import LagrangeInterpolatedObject from '../src/engine/objects/LagrangeInterpolatedObject.js';
 import TwoBodySatellite from '../src/engine/objects/TwoBodySatellite.js';
@@ -21,6 +22,7 @@ jest.mock('../src/engine/objects/SGP4Satellite.js');
 jest.mock('../src/engine/objects/EarthGroundStation.js');
 jest.mock('../src/engine/objects/AzElGimbal.js');
 jest.mock('../src/engine/objects/ElectroOpticalSensor.js');
+jest.mock('../src/engine/objects/FastSteeringMirror.js');
 jest.mock('../src/engine/objects/Laser.js');
 jest.mock('../src/engine/objects/LagrangeInterpolatedObject.js');
 jest.mock('../src/engine/objects/TwoBodySatellite.js');
@@ -576,6 +578,7 @@ describe('Universe', () => {
   describe('addGroundElectroOpticalObservatory', () => {
     let mockSite;
     let mockGimbal;
+    let mockFsm;
     let mockSensor;
     let mockLaser;
 
@@ -599,6 +602,16 @@ describe('Universe', () => {
         update: jest.fn()
       };
 
+      mockFsm = {
+        name: 'ObservatoryFsm',
+        type: 'FastSteeringMirror',
+        tip: 0,
+        tilt: 0,
+        attach: jest.fn(),
+        update: jest.fn(),
+        setAxisSlewRates: jest.fn()
+      };
+
       mockLaser = {
         name: 'ObservatoryLaser',
         type: 'Laser',
@@ -616,6 +629,9 @@ describe('Universe', () => {
       ElectroOpicalSensor.mockImplementation((h, w, y, x, for_, name) => {
         return { ...mockSensor, name: name };
       });
+      FastSteeringMirror.mockImplementation((name) => {
+        return { ...mockFsm, name: name };
+      });
       Laser.mockImplementation((options = {}) => {
         return {
           ...mockLaser,
@@ -626,11 +642,12 @@ describe('Universe', () => {
           active: options.active ?? false
         };
       });
-      Observatory.mockImplementation((site, gimbal, sensors) => {
+      Observatory.mockImplementation((site, gimbal, sensors, fsm) => {
         const sensorList = Array.isArray(sensors) ? sensors : [sensors]
         return {
           site,
           gimbal,
+          fsm,
           sensors: sensorList,
           sensor: sensorList[0]
         }
@@ -663,7 +680,8 @@ describe('Universe', () => {
       expect(Observatory).toHaveBeenCalledWith(
         expect.objectContaining({ name: 'TestObs' }),
         expect.objectContaining({ name: 'TestObs Gimbal' }),
-        [expect.objectContaining({ name: 'TestObs Sensor' })]
+        [expect.objectContaining({ name: 'TestObs Sensor' })],
+        undefined
       );
       
       // Verify collections are updated
@@ -920,6 +938,38 @@ describe('Universe', () => {
 
       expect(result.sensors[0].maxRange).toBe(6000)
       expect(universe.gimbals[0].maxRange).toBe(7500)
+    })
+
+    test('should create and wire an optional fast steering mirror under the coarse gimbal', () => {
+      const result = universe.addGroundElectroOpticalObservatory({
+        name: 'Fsm Observatory',
+        latitude: 34.6707,
+        longitude: -86.6508,
+        altitude: 5,
+        fsm: {
+          tip: 1.5,
+          tilt: -2.5,
+          slewRates: {
+            tip: { maxRateDegPerSec: 20 },
+            tilt: { maxRateDegPerSec: 30, maxAccelDegPerSec2: 60 }
+          }
+        },
+        sensors: [
+          { height: 2048, width: 2048, y_fov: 1, x_fov: 1, field_of_regard: [] },
+          { type: 'Laser', name: 'Fsm Laser', maxRange: 6000 }
+        ]
+      })
+
+      expect(FastSteeringMirror).toHaveBeenCalledWith('Fsm Observatory FSM')
+      expect(mockFsm.attach).toHaveBeenCalledWith(expect.objectContaining({ name: 'Fsm Observatory Gimbal' }))
+      expect(mockFsm.setAxisSlewRates).toHaveBeenCalledWith({
+        tip: { maxRateDegPerSec: 20 },
+        tilt: { maxRateDegPerSec: 30, maxAccelDegPerSec2: 60 }
+      })
+      expect(result.fsm).toEqual(expect.objectContaining({ name: 'Fsm Observatory FSM' }))
+      expect(universe.fsms).toContainEqual(expect.objectContaining({ name: 'Fsm Observatory FSM' }))
+      expect(result.sensors[0].attach).toHaveBeenCalledWith(expect.objectContaining({ name: 'Fsm Observatory FSM' }))
+      expect(result.sensors[1].attach).toHaveBeenCalledWith(expect.objectContaining({ name: 'Fsm Observatory FSM' }))
     })
   });
 

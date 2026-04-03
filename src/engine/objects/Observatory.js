@@ -30,10 +30,12 @@ class Observatory {
      * @param {SimObject} site - The site object.
      * @param {Gimbal} gimbal - The gimbal object.
      * @param {ElectroOpicalSensor|import('./Laser.js').default|Array<ElectroOpicalSensor|import('./Laser.js').default>} sensor - The payload object(s).
+     * @param {import('./FastSteeringMirror.js').default} [fsm] - Optional fast steering mirror.
      */
-    constructor(site, gimbal, sensor) {
+    constructor(site, gimbal, sensor, fsm = undefined) {
         this._site = site;
         this._gimbal = gimbal;
+        this._fsm = fsm;
         this.sensors = sensor;
     }
 
@@ -67,6 +69,22 @@ class Observatory {
      */
     set gimbal(value) {
         this._gimbal = value;
+    }
+
+    /**
+     * Gets the fast steering mirror object.
+     * @returns {import('./FastSteeringMirror.js').default|undefined} The FSM object.
+     */
+    get fsm() {
+        return this._fsm;
+    }
+
+    /**
+     * Sets the fast steering mirror object.
+     * @param {import('./FastSteeringMirror.js').default|undefined} value - The FSM object.
+     */
+    set fsm(value) {
+        this._fsm = value;
     }
 
     /**

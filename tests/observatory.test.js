@@ -65,13 +65,14 @@ import Gimbal from '../src/engine/objects/Gimbal.js';
 import ElectroOpicalSensor from '../src/engine/objects/ElectroOpticalSensor.js';
 
 describe('Observatory', () => {
-  let mockSite, mockGimbal, mockSensor;
+  let mockSite, mockGimbal, mockSensor, mockFsm;
 
   beforeEach(() => {
     // Create mock instances
     mockSite = new SimObject('TestSite');
     mockGimbal = new Gimbal('TestGimbal');
     mockSensor = new ElectroOpicalSensor(100, 100, 10, 10, [], 'TestSensor');
+    mockFsm = { name: 'TestFsm', tip: 0, tilt: 0 };
 
     // Reset all mocks
     jest.clearAllMocks();
@@ -84,6 +85,13 @@ describe('Observatory', () => {
       expect(observatory._site).toBe(mockSite);
       expect(observatory._gimbal).toBe(mockGimbal);
       expect(observatory._sensor).toBe(mockSensor);
+    });
+
+    it('should store an optional fast steering mirror reference', () => {
+      const observatory = new Observatory(mockSite, mockGimbal, mockSensor, mockFsm);
+
+      expect(observatory.fsm).toBe(mockFsm);
+      expect(observatory._fsm).toBe(mockFsm);
     });
 
     it('should store references to all components correctly', () => {
@@ -272,6 +280,23 @@ describe('Observatory', () => {
       
       observatory.gimbal = gimbal3;
       expect(observatory.gimbal).toBe(gimbal3);
+    });
+  });
+
+  describe('fsm getter/setter', () => {
+    it('should return undefined when no FSM is configured', () => {
+      const observatory = new Observatory(mockSite, mockGimbal, mockSensor);
+
+      expect(observatory.fsm).toBeUndefined();
+    });
+
+    it('should allow assigning a FSM after construction', () => {
+      const observatory = new Observatory(mockSite, mockGimbal, mockSensor);
+
+      observatory.fsm = mockFsm;
+
+      expect(observatory.fsm).toBe(mockFsm);
+      expect(observatory._fsm).toBe(mockFsm);
     });
   });
 

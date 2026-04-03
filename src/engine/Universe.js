@@ -4,13 +4,21 @@ import SGP4Satellite from "./objects/SGP4Satellite.js";
 import EarthGroundStation from "./objects/EarthGroundStation.js";
 import AzElGimbal from "./objects/AzElGimbal.js";
 import ElectroOpicalSensor from "./objects/ElectroOpticalSensor.js";
+import FastSteeringMirror from "./objects/FastSteeringMirror.js";
 import Laser from "./objects/Laser.js";
 import LagrangeInterpolatedObject from "./objects/LagrangeInterpolatedObject.js";
 import TwoBodySatellite from "./objects/TwoBodySatellite.js";
 import AirVehicle from "./objects/AirVehicle.js";
 import SimObject from "./objects/SimObject.js";
 import Observatory from "./objects/Observatory.js";
-import { getObservatorySensors, normalizeSensorZoomConfig } from "./objects/observatoryUtils.js";
+import {
+  defaultObservatorySensorName,
+  getObservatorySensors,
+  normalizeAxisSlewRates,
+  normalizeObservatoryFsmConfig,
+  normalizeObservatoryPayloadType,
+  normalizeSensorZoomConfig
+} from "./objects/observatoryUtils.js";
 import { Cartesian3, JulianDate, defined } from "cesium";
 import EventQueue from "./event/EventQueue.js";
 import { booleanOr, numberOr, toCartesian3OrUndefined } from "./utils.js";
@@ -120,32 +128,64 @@ function findObservatorySensor(observatory, sensorName) {
   return undefined
 }
 
-/**
- * Normalize an observatory payload type.
- *
- * @param {string|undefined} payloadType
- * @returns {string|undefined}
- */
-function normalizeObservatoryPayloadType(payloadType) {
-  const normalized = String(payloadType ?? '').trim().toLowerCase()
-  if (!normalized) return undefined
-  return normalized === 'laser' ? 'Laser' : 'ElectroOpticalSensor'
+function collectAxisValues(...sources) {
+  const out = {}
+
+  sources.forEach((source) => {
+    if (!defined(source) || typeof source !== 'object' || Array.isArray(source)) {
+      return
+    }
+    Object.keys(source).forEach((axisName) => {
+      const axis = String(axisName).trim()
+      if (!axis) return
+      out[axis] = source[axisName]
+    })
+  })
+
+  return out
 }
 
-/**
- * Generate a default payload name for an observatory payload slot.
- *
- * @param {string} observatoryName
- * @param {number} [sensorIndex=0]
- * @param {string|undefined} [payloadType]
- * @returns {string}
- */
-function defaultObservatorySensorName(observatoryName, sensorIndex = 0, payloadType = undefined) {
-  const baseName = String(observatoryName ?? '').trim()
-  const payloadBase = payloadType === 'Laser'
-    ? (baseName ? `${baseName} Laser` : 'Laser')
-    : (baseName ? `${baseName} Sensor` : 'Sensor')
-  return sensorIndex === 0 ? payloadBase : `${payloadBase} ${sensorIndex + 1}`
+function applyAxisTargets(controller, axisValues, getOptions = undefined) {
+  Object.keys(axisValues).forEach((axisName) => {
+    const axis = String(axisName)
+    const targetDeg = Number(axisValues[axisName])
+    if (!Number.isFinite(targetDeg)) return
+
+    if (typeof controller.setAxisTarget === 'function') {
+      controller.setAxisTarget(axis, targetDeg, getOptions?.(axis))
+    } else if (Object.prototype.hasOwnProperty.call(controller, axis)) {
+      controller[axis] = targetDeg
+    }
+  })
+}
+
+function applyAxisDeltas(controller, axisValues, getOptions = undefined) {
+  Object.keys(axisValues).forEach((axisName) => {
+    const axis = String(axisName)
+    const deltaDeg = Number(axisValues[axisName])
+    if (!Number.isFinite(deltaDeg) || deltaDeg === 0) return
+
+    const currentDeg = numberOr(controller[axis], 0)
+    if (typeof controller.stepAxisTarget === 'function') {
+      controller.stepAxisTarget(axis, deltaDeg, currentDeg, getOptions?.(axis))
+    } else if (Object.prototype.hasOwnProperty.call(controller, axis)) {
+      controller[axis] = currentDeg + deltaDeg
+    }
+  })
+}
+
+function getGimbalAxisTargetOptions(axis) {
+  if (String(axis).toLowerCase() !== 'az') {
+    return undefined
+  }
+
+  return {
+    normalizeTargetDeg: (azDeg) => {
+      let wrapped = Number(azDeg) % 360.0
+      if (wrapped < 0) wrapped += 360.0
+      return wrapped
+    }
+  }
 }
 
 /**
@@ -203,7 +243,7 @@ function normalizeObservatorySensorConfig(entry, observatoryName, sensorIndex = 
  * @param {Array} [field_of_regard]
  * @param {Object<string, number|Object>} [gimbalSlewRates]
  * @param {number} [sensorMaxDistance]
- * @returns {{name:string, latitude:number, longitude:number, altitude:number, gimbalType:string, gimbalSlewRates:Object|undefined, sensorMaxDistance:number|undefined, sensors:Array<Object>}}
+ * @returns {{name:string, latitude:number, longitude:number, altitude:number, gimbalType:string, gimbalSlewRates:Object|undefined, sensorMaxDistance:number|undefined, fsm:Object|undefined, sensors:Array<Object>}}
  */
 function normalizeGroundObservatoryConfig(nameOrConfig, latitude, longitude, altitude, gimbalType, height, width, y_fov, x_fov, field_of_regard, gimbalSlewRates, sensorMaxDistance) {
   if (defined(nameOrConfig) && typeof nameOrConfig === 'object' && !Array.isArray(nameOrConfig)) {
@@ -228,8 +268,9 @@ function normalizeGroundObservatoryConfig(nameOrConfig, latitude, longitude, alt
       longitude: Number(config.longitude),
       altitude: Number(config.altitude ?? 0),
       gimbalType: config.gimbalType ?? config.gimbal_type ?? 'AzElGimbal',
-      gimbalSlewRates: config.gimbalSlewRates ?? config.gimbal_slew_rates,
+      gimbalSlewRates: normalizeAxisSlewRates(config.gimbalSlewRates ?? config.gimbal_slew_rates),
       sensorMaxDistance: config.sensorMaxDistance ?? config.sensor_max_distance,
+      fsm: normalizeObservatoryFsmConfig(config.fsm, name),
       sensors: sensorsInput.map((sensor, index) => normalizeObservatorySensorConfig(sensor, name, index))
     }
   }
@@ -241,8 +282,9 @@ function normalizeGroundObservatoryConfig(nameOrConfig, latitude, longitude, alt
     longitude: Number(longitude),
     altitude: Number(altitude ?? 0),
     gimbalType,
-    gimbalSlewRates,
+    gimbalSlewRates: normalizeAxisSlewRates(gimbalSlewRates),
     sensorMaxDistance,
+    fsm: undefined,
     sensors: [
       normalizeObservatorySensorConfig({
         height,
@@ -292,6 +334,12 @@ class Universe {
      */
     this._sensors = []
     /**
+     * The fast steering mirrors in the universe.
+     * @type {Array.<FastSteeringMirror>}
+     * @private
+     */
+    this._fsms = []
+    /**
      * The trackable objects in the universe.
      * @type {Array.<SimObject>}
      * @private
@@ -319,6 +367,8 @@ class Universe {
 
     // Register default event handlers
     // - trackObject: { observer: siteName, target: objectName }
+    // - setFsmAxes: { observer: siteName, axes: { tip, tilt } }
+    // - stepFsmAxes: { observer: siteName, axes|deltas: { tip, tilt } }
     // - setSensorZoom: { observer: siteName, sensor?: sensorName, zoomLevel }
     // - stepSensorZoom: { observer: siteName, sensor?: sensorName, deltaZoomLevel }
     // - setDirectedEnergyActive: { observer: siteName, device|sensor: payloadName, active }
@@ -360,42 +410,21 @@ class Universe {
         gimbal.clearAxisTargets(true)
       }
 
-      const deltas = {}
-      const axisObj = data.axes ?? data.deltas ?? ev?.axes ?? ev?.deltas
-      if (defined(axisObj) && typeof axisObj === 'object') {
-        Object.keys(axisObj).forEach((axisName) => {
-          deltas[axisName] = axisObj[axisName]
-        })
-      }
-      if (Object.prototype.hasOwnProperty.call(data, 'delta_az_deg') || Object.prototype.hasOwnProperty.call(data, 'deltaAzDeg')) {
-        deltas.az = data.delta_az_deg ?? data.deltaAzDeg
-      }
-      if (Object.prototype.hasOwnProperty.call(data, 'delta_el_deg') || Object.prototype.hasOwnProperty.call(data, 'deltaElDeg')) {
-        deltas.el = data.delta_el_deg ?? data.deltaElDeg
-      }
-      if (Object.prototype.hasOwnProperty.call(data, 'delta_roll_deg') || Object.prototype.hasOwnProperty.call(data, 'deltaRollDeg')) {
-        deltas.roll = data.delta_roll_deg ?? data.deltaRollDeg
-      }
+      const deltas = collectAxisValues(data.axes ?? data.deltas, ev?.axes ?? ev?.deltas)
+      applyAxisDeltas(gimbal, deltas, getGimbalAxisTargetOptions)
+    })
 
-      Object.keys(deltas).forEach((axisName) => {
-        const axis = String(axisName)
-        const deltaDeg = Number(deltas[axisName])
-        if (!Number.isFinite(deltaDeg) || deltaDeg === 0) return
-        const currentDeg = numberOr(gimbal[axis], 0)
-        const normalizeTargetDeg = (axis.toLowerCase() === 'az')
-          ? (azDeg) => {
-            let wrapped = Number(azDeg) % 360.0
-            if (wrapped < 0) wrapped += 360.0
-            return wrapped
-          }
-          : undefined
+    this._events.registerHandler('stepFsmAxes', (universe, ev) => {
+      const data = ev?.data ?? {}
+      const observerName = data.observer ?? ev?.observer
+      if (!observerName) return
 
-        if (typeof gimbal.stepAxisTarget === 'function') {
-          gimbal.stepAxisTarget(axis, deltaDeg, currentDeg, { normalizeTargetDeg })
-        } else if (Object.prototype.hasOwnProperty.call(gimbal, axis)) {
-          gimbal[axis] = currentDeg + deltaDeg
-        }
-      })
+      const obs = findObservatoryByName(universe, observerName)
+      const fsm = obs?.fsm
+      if (!fsm) return
+
+      const deltas = collectAxisValues(data.axes ?? data.deltas, ev?.axes ?? ev?.deltas)
+      applyAxisDeltas(fsm, deltas)
     })
 
     this._events.registerHandler('setGimbalAxes', (universe, ev) => {
@@ -409,27 +438,19 @@ class Universe {
       gimbal.trackObject = null
       gimbal.trackMode = 'fixed'
 
-      const axisObj = data.axes ?? ev?.axes
-      if (!defined(axisObj) || typeof axisObj !== 'object') return
+      applyAxisTargets(gimbal, collectAxisValues(data.axes, ev?.axes), getGimbalAxisTargetOptions)
+    })
 
-      Object.keys(axisObj).forEach((axisName) => {
-        const axis = String(axisName)
-        const targetDeg = Number(axisObj[axisName])
-        if (!Number.isFinite(targetDeg)) return
-        const normalizeTargetDeg = (axis.toLowerCase() === 'az')
-          ? (azDeg) => {
-            let wrapped = Number(azDeg) % 360.0
-            if (wrapped < 0) wrapped += 360.0
-            return wrapped
-          }
-          : undefined
+    this._events.registerHandler('setFsmAxes', (universe, ev) => {
+      const data = ev?.data ?? {}
+      const observerName = data.observer ?? ev?.observer
+      if (!observerName) return
 
-        if (typeof gimbal.setAxisTarget === 'function') {
-          gimbal.setAxisTarget(axis, targetDeg, { normalizeTargetDeg })
-        } else if (Object.prototype.hasOwnProperty.call(gimbal, axis)) {
-          gimbal[axis] = targetDeg
-        }
-      })
+      const obs = findObservatoryByName(universe, observerName)
+      const fsm = obs?.fsm
+      if (!fsm) return
+
+      applyAxisTargets(fsm, collectAxisValues(data.axes, ev?.axes))
     })
 
     this._events.registerHandler('setSensorZoom', (universe, ev) => {
@@ -698,6 +719,7 @@ class Universe {
    * Supported forms:
    * - Legacy positional arguments for a single EO sensor.
    * - Object config with `sensors[]` for a shared-gimbal multi-payload observatory.
+   * - Optional `fsm` config using canonical `tip`, `tilt`, and `slewRates`.
    *
    * @param {string|Object} name - Observatory name, or an object config containing
    *   `name`, `latitude`, `longitude`, `altitude`, `gimbalSlewRates`,
@@ -745,6 +767,25 @@ class Universe {
     gimbal.attach(site)
     this.addObject(gimbal, false)
 
+    let fsm
+    if (defined(config.fsm)) {
+      fsm = new FastSteeringMirror(config.fsm.name)
+      if (Number.isFinite(config.fsm.tip)) {
+        fsm.tip = config.fsm.tip
+      }
+      if (Number.isFinite(config.fsm.tilt)) {
+        fsm.tilt = config.fsm.tilt
+      }
+      if (defined(config.fsm.slewRates) && typeof fsm.setAxisSlewRates === 'function') {
+        fsm.setAxisSlewRates(config.fsm.slewRates)
+      }
+      fsm.attach(gimbal)
+      this.addObject(fsm, false)
+      this._fsms.push(fsm)
+    }
+
+    const payloadParent = fsm ?? gimbal
+
     const sensors = config.sensors.map((sensorConfig) => {
       if (sensorConfig.type === 'Laser') {
         const laser = new Laser({
@@ -765,7 +806,7 @@ class Universe {
         if (defined(sensorConfig.color)) {
           laser.color = sensorConfig.color
         }
-        laser.attach(gimbal)
+        laser.attach(payloadParent)
         this.addObject(laser, false)
         this._sensors.push(laser)
         return laser
@@ -786,7 +827,7 @@ class Universe {
       if (defined(sensorConfig.color)) {
         sensor.color = sensorConfig.color
       }
-      sensor.attach(gimbal)
+      sensor.attach(payloadParent)
       this.addObject(sensor, false)
       this._sensors.push(sensor)
       return sensor
@@ -795,7 +836,7 @@ class Universe {
     this._objects[config.name] = site
     this._gimbals.push(gimbal)
 
-    const observatory = new Observatory(site, gimbal, sensors)
+    const observatory = new Observatory(site, gimbal, sensors, fsm)
     observatory.name = config.name
     this._observatories.push(observatory)
 
@@ -832,6 +873,14 @@ class Universe {
    */
   get sensors() {
     return this._sensors;
+  }
+
+  /**
+   * Gets the fast steering mirrors in the universe.
+   * @type {Array.<FastSteeringMirror>}
+   */
+  get fsms() {
+    return this._fsms;
   }
 
   /**
@@ -886,6 +935,7 @@ class Universe {
     this._observatories.forEach((o) => {
       o.site.update(time, this, forceUpdate)
       o.gimbal.update(time, this, forceUpdate)
+      o.fsm?.update?.(time, this, forceUpdate)
       getObservatorySensors(o).forEach((sensor) => {
         sensor?.update?.(time, this, forceUpdate)
       })

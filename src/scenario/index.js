@@ -24,7 +24,11 @@ import {
   Quaternion,
   Transforms
 } from 'cesium'
-import { normalizeSensorZoomConfig } from '../engine/objects/observatoryUtils.js'
+import {
+  normalizeAxisSlewRates,
+  normalizeObservatoryFsmConfig,
+  normalizeSensorZoomConfig
+} from '../engine/objects/observatoryUtils.js'
 import { booleanOr, numberOr, numberOrUndefined, toCartesian3 } from '../engine/utils.js'
 import {
   createClockContext,
@@ -77,58 +81,12 @@ function resolveScenarioColor(input) {
   return Color.fromRandom({ alpha: 1.0 })
 }
 
-function resolveGimbalAxisSlewRate(entry) {
-  let maxRateDegPerSec
-  let maxAccelDegPerSec2
-
-  if (typeof entry === 'number' || typeof entry === 'string') {
-    maxRateDegPerSec = Number(entry)
-  } else if (defined(entry) && typeof entry === 'object') {
-    maxRateDegPerSec = Number(
-      entry.max_rate ??
-      entry.maxRate ??
-      entry.maxRateDegPerSec ??
-      entry.max_rate_deg_per_sec ??
-      entry.max_rate_deg_s ??
-      entry.rate ??
-      entry.slew_rate_deg_per_sec
-    )
-    maxAccelDegPerSec2 = Number(
-      entry.max_accel ??
-      entry.maxAccel ??
-      entry.maxAccelDegPerSec2 ??
-      entry.max_accel_deg_per_sec2 ??
-      entry.max_accel_deg_s2 ??
-      entry.accel ??
-      entry.acceleration_deg_per_sec2
-    )
-  }
-
-  if (!(Number.isFinite(maxRateDegPerSec) && maxRateDegPerSec > 0)) {
-    return undefined
-  }
-
-  const out = { maxRateDegPerSec }
-  if (Number.isFinite(maxAccelDegPerSec2) && maxAccelDegPerSec2 > 0) {
-    out.maxAccelDegPerSec2 = maxAccelDegPerSec2
-  }
-  return out
+function resolveGimbalSlewRates(input) {
+  return normalizeAxisSlewRates(input)
 }
 
-function resolveGimbalSlewRates(input) {
-  if (!defined(input) || typeof input !== 'object' || Array.isArray(input)) {
-    return undefined
-  }
-  const out = {}
-  Object.keys(input).forEach((axisName) => {
-    const axis = String(axisName).trim()
-    if (!axis) return
-    const axisRate = resolveGimbalAxisSlewRate(input[axisName])
-    if (axisRate) {
-      out[axis] = axisRate
-    }
-  })
-  return Object.keys(out).length > 0 ? out : undefined
+function resolveScenarioFsmConfig(input, observatoryName) {
+  return normalizeObservatoryFsmConfig(input, observatoryName)
 }
 
 function resolveSensorMaxDistance(input) {
@@ -459,6 +417,8 @@ function createAirVehicleModelOrientationProperty(vehicle, universe, headingOffs
  *   Laser entries use `type: 'Laser'` plus `beam_divergence`, `power`, optional
  *   `active`, optional `max_range`, and optional placeholder `x_fov`, `y_fov`,
  *   `field_of_regard`, and `color`.
+ * @param {Object} [obs.fsm] - Optional fast steering mirror config using
+ *   canonical `tip`, `tilt`, and optional `slewRates`.
  * @param {Object<string, number|Object>} [obs.gimbal_slew_rates] - Optional per-axis slew settings.
  * @param {number|string} [obs.sensor_max_distance] - Optional fallback sensor range in meters when idle.
  * @param {string|Object} [obs.model] - Optional 3D model URI or Cesium model options.
@@ -471,6 +431,7 @@ export function addObservatory(universe, viewer, obs) {
 
   const sensors = resolveScenarioObservatorySensors(obs)
   const zoom = normalizeSensorZoomConfig(obs.zoom)
+  const fsm = resolveScenarioFsmConfig(obs.fsm, obs.name)
   const o = universe.addGroundElectroOpticalObservatory({
     name: String(obs.name),
     latitude: Number(obs.latitude),
@@ -484,6 +445,7 @@ export function addObservatory(universe, viewer, obs) {
     field_of_regard: obs.field_of_regard ?? [],
     ...(zoom ? { zoom } : {}),
     ...(sensors ? { sensors } : {}),
+    ...(fsm ? { fsm } : {}),
     gimbalSlewRates: resolveGimbalSlewRates(
       obs.gimbal_slew_rates ??
       obs.gimbalSlewRates ??
@@ -888,6 +850,7 @@ export function addScenarioObject(universe, viewer, obj) {
         x_fov: obj.x_fov,
         field_of_regard: obj.field_of_regard,
         zoom: obj.zoom,
+        fsm: obj.fsm,
         sensors: obj.sensors,
         gimbal_slew_rates: (obj.gimbal_slew_rates != null ? obj.gimbal_slew_rates : obj.gimbalSlewRates),
         sensor_max_distance: (
