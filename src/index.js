@@ -23,6 +23,11 @@ export { default as TwoBodySatellite } from './engine/objects/TwoBodySatellite.j
 export { default as AirVehicle } from './engine/objects/AirVehicle.js'
 export { default as Observatory } from './engine/objects/Observatory.js'
 
+export { default as SessionManager } from './runtime/SessionManager.js'
+export { default as SimulationRuntime } from './runtime/SimulationRuntime.js'
+export { default as RuntimeClient } from './runtime/RuntimeClient.js'
+export * as Runtime from './runtime/index.js'
+
 export { default as CallbackPositionProperty } from './engine/cesium/CallbackPositionProperty.js'
 export { default as CompoundElementVisualizer } from './engine/cesium/CompoundElementVisualizer.js'
 export { default as CoverageGridVisualizer } from './engine/cesium/CoverageGridVisualizer.js'

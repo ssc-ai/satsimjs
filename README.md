@@ -93,3 +93,25 @@ cd satsimjs-nextjs-example
 npm install
 npm run dev
 ```
+
+## Optional Runtime Layer
+
+SatSim also includes an optional runtime foundation for applications that need
+an authoritative simulation process with read-only or read/write clients.
+
+Browser-safe imports:
+
+```javascript
+import { RuntimeClient, SessionManager, SimulationRuntime } from "satsim";
+```
+
+Node server import:
+
+```javascript
+import { HttpRuntimeServer } from "satsim/src/runtime/node.js";
+```
+
+The runtime API exposes scenario load/start/stop, snapshots, SSE state
+streaming, ordered runtime events, and session-based write policies:
+`multi`, `single`, or `readOnly`. Domain-specific protocol adapters should be
+composed by the embedding application.
