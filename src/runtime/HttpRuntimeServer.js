@@ -4,10 +4,19 @@ import SimulationRuntime from './SimulationRuntime.js'
 import { createSseChannel, parseJsonBody, sendJson } from './http.js'
 
 function sendError(res, err) {
-  sendJson(res, err.statusCode || 400, {
+  const payload = {
     ok: false,
     error: String(err?.message ?? err)
-  })
+  }
+  if (err?.code) {
+    payload.code = err.code
+  }
+  if (Array.isArray(err?.errors)) {
+    payload.errors = err.errors
+  } else if (typeof err?.toJSON === 'function') {
+    payload.details = err.toJSON()
+  }
+  sendJson(res, err.statusCode || 400, payload)
 }
 
 async function readOptionalJsonBody(req) {

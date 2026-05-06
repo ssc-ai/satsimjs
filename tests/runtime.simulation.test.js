@@ -1,5 +1,6 @@
 import SimulationRuntime from '../src/runtime/SimulationRuntime.js'
 import { applyIau2006XysDataPatch } from '../src/engine/cesium/Iau2006XysDataLocal.js'
+import { createDefaultCommandBus } from '../src/engine/command/index.js'
 
 beforeAll(() => {
   applyIau2006XysDataPatch()
@@ -132,6 +133,32 @@ describe('SimulationRuntime', () => {
     runtime.close()
   })
 
+  test('rejects invalid command batches atomically', async () => {
+    const runtime = new SimulationRuntime({ scenarioRegistry: createRegistry(), writePolicy: 'multi' })
+    const writer = runtime.createSession({ holderLabel: 'Writer', capability: 'write' })
+    await runtime.loadScenarioById('demo', { sessionId: writer.sessionId })
+    const gimbal = runtime.getObservatoryByName('OBS-1').gimbal
+    gimbal.az = 12
+
+    await expect(runtime.applyCommands(writer.sessionId, [
+      { type: 'setGimbalAxes', observer: 'OBS-1', axes: { az: 30 } },
+      { type: 'setGimbalAxes', observer: 'Missing', axes: { az: 40 } }
+    ])).rejects.toMatchObject({
+      statusCode: 409,
+      errors: [
+        expect.objectContaining({
+          index: 1,
+          type: 'setGimbalAxes',
+          code: 'COMMAND_OBSERVATORY_NOT_FOUND'
+        })
+      ]
+    })
+
+    expect(gimbal.az).toBe(12)
+    expect(runtime.getRuntimeEvents().events).toHaveLength(0)
+    runtime.close()
+  })
+
   test('translates analog rate leases into absolute commands and expires them', async () => {
     let nowMs = Date.parse('2026-04-03T16:00:00Z')
     const runtime = new SimulationRuntime({
@@ -173,6 +200,41 @@ describe('SimulationRuntime', () => {
       { type: 'stepGimbalAxes', observer: 'OBS-1', axes: { az: 1 } }
     ])).resolves.toMatchObject({
       sync: { lastEventSequence: 1 }
+    })
+    runtime.close()
+  })
+
+  test('executes custom registered commands through the runtime', async () => {
+    const commandBus = createDefaultCommandBus()
+    commandBus.register({
+      type: 'customMark',
+      validate(command) {
+        if (!command.value) {
+          throw new Error('value required')
+        }
+      },
+      execute(command, { universe }) {
+        universe.customMark = command.value
+      }
+    })
+
+    const runtime = new SimulationRuntime({
+      scenarioRegistry: createRegistry(),
+      commandBus,
+      requireWriteSession: false
+    })
+    await runtime.loadScenarioById('demo')
+
+    await runtime.applyCommands('', [
+      { type: 'customMark', value: 'accepted' }
+    ])
+
+    expect(runtime.universe.customMark).toBe('accepted')
+    expect(runtime.getRuntimeEvents().events[0]).toMatchObject({
+      type: 'customMark',
+      data: {
+        value: 'accepted'
+      }
     })
     runtime.close()
   })

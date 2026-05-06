@@ -1,8 +1,11 @@
-globalThis.SATSIM_VERSION = "0.14.0";
+globalThis.SATSIM_VERSION = "0.15.0";
 
 export { default as Universe } from './engine/Universe.js'
 export { default as Event } from './engine/event/Event.js'
 export { default as EventQueue } from './engine/event/EventQueue.js'
+export { default as CommandBus } from './engine/command/CommandBus.js'
+export { default as CommandError } from './engine/command/CommandError.js'
+export { createDefaultCommandBus, registerBuiltInCommands } from './engine/command/index.js'
 
 export { default as Node } from './engine/graph/Node.js'
 export { default as Group } from './engine/graph/Group.js'

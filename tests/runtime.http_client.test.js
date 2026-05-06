@@ -142,6 +142,28 @@ describe('HttpRuntimeServer', () => {
       })
       expect(commandSnapshot.sync.lastEventSequence).toBe(1)
 
+      const badCommandResponse = await fetch(`${baseUrl}/api/v1/runtime/commands`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          sessionId: writer.sessionId,
+          commands: [{ type: 'stepGimbalAxes', observer: 'Missing', axes: { az: 1 } }]
+        })
+      })
+      const badCommandPayload = await badCommandResponse.json()
+      expect(badCommandResponse.status).toBe(409)
+      expect(badCommandPayload).toMatchObject({
+        ok: false,
+        code: 'COMMAND_BATCH_INVALID',
+        errors: [
+          expect.objectContaining({
+            index: 0,
+            type: 'stepGimbalAxes',
+            code: 'COMMAND_OBSERVATORY_NOT_FOUND'
+          })
+        ]
+      })
+
       const events = await fetchJson(`${baseUrl}/api/v1/events?after=0`)
       expect(events.events[0]).toMatchObject({
         holderLabel: 'Writer',

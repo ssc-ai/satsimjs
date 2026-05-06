@@ -21,172 +21,8 @@ import {
 } from "./objects/observatoryUtils.js";
 import { Cartesian3, JulianDate, defined } from "cesium";
 import EventQueue from "./event/EventQueue.js";
-import { booleanOr, numberOr, toCartesian3OrUndefined } from "./utils.js";
-
-function resolveVelocityNedFromEventData(data, fallbackHeadingDeg = 0) {
-  const vNedInput = data.velocity_ned ?? data.velocityNed ?? data.velocity
-  if (defined(vNedInput)) {
-    return toCartesian3OrUndefined(vNedInput)
-  }
-
-  const vEnuInput = data.velocity_enu ?? data.velocityEnu
-  if (defined(vEnuInput)) {
-    const vEnu = toCartesian3OrUndefined(vEnuInput)
-    if (!defined(vEnu)) return undefined
-    return new Cartesian3(vEnu.y, vEnu.x, -vEnu.z)
-  }
-
-  if (
-    defined(data.speed) ||
-    defined(data.horizontal_speed) ||
-    defined(data.ground_speed) ||
-    defined(data.vertical_speed) ||
-    defined(data.climb_rate)
-  ) {
-    const speed = numberOr(data.speed ?? data.horizontal_speed ?? data.ground_speed)
-    const headingDeg = numberOr(data.heading ?? data.direction, fallbackHeadingDeg)
-    const headingRad = headingDeg * Math.PI / 180
-    const verticalSpeed = numberOr(data.vertical_speed ?? data.climb_rate)
-    const vn = speed * Math.cos(headingRad)
-    const ve = speed * Math.sin(headingRad)
-    const vd = -verticalSpeed
-    return new Cartesian3(vn, ve, vd)
-  }
-
-  return undefined
-}
-
-function resolveAccelerationNedFromEventData(data) {
-  const aNedInput = data.acceleration_ned ?? data.accelerationNed ?? data.acceleration
-  if (defined(aNedInput)) {
-    return toCartesian3OrUndefined(aNedInput)
-  }
-
-  const aEnuInput = data.acceleration_enu ?? data.accelerationEnu
-  if (defined(aEnuInput)) {
-    const aEnu = toCartesian3OrUndefined(aEnuInput)
-    if (!defined(aEnu)) return undefined
-    return new Cartesian3(aEnu.y, aEnu.x, -aEnu.z)
-  }
-
-  return undefined
-}
-
-function resolveEventObjectName(ev) {
-  const data = ev?.data ?? {}
-  return data.object ?? data.vehicle ?? data.name ?? data.target ?? ev?.object ?? ev?.vehicle ?? ev?.name ?? ev?.target
-}
-
-function resolveAirVehicleForEvent(universe, ev) {
-  const objectName = resolveEventObjectName(ev)
-  if (!defined(objectName) || !universe.getObject) return undefined
-  const obj = universe.getObject(objectName)
-  if (!defined(obj)) return undefined
-  if (obj instanceof AirVehicle) return obj
-  if ('velocityNed' in obj || 'accelerationNed' in obj || 'heading' in obj) return obj
-  return undefined
-}
-
-/**
- * Find an observatory by its site name.
- *
- * @param {Universe} universe
- * @param {string} observerName
- * @returns {Observatory|undefined}
- */
-function findObservatoryByName(universe, observerName) {
-  if (!defined(observerName)) return undefined
-  const arr = universe?._observatories || []
-  for (let i = 0; i < arr.length; i++) {
-    const obs = arr[i]
-    if (obs?.site?.name === observerName) return obs
-  }
-  return undefined
-}
-
-/**
- * Resolve a target payload within an observatory.
- *
- * When no payload name is provided, the primary payload is returned to preserve
- * legacy single-sensor event behavior.
- *
- * @param {Observatory|Object|undefined} observatory
- * @param {string|undefined} sensorName
- * @returns {Object|undefined}
- */
-function findObservatorySensor(observatory, sensorName) {
-  const sensors = getObservatorySensors(observatory)
-  const normalizedSensorName = String(sensorName ?? '').trim()
-  if (!normalizedSensorName) {
-    return observatory?.sensor ?? sensors[0]
-  }
-  for (let i = 0; i < sensors.length; i++) {
-    if (sensors[i]?.name === normalizedSensorName) {
-      return sensors[i]
-    }
-  }
-  return undefined
-}
-
-function collectAxisValues(...sources) {
-  const out = {}
-
-  sources.forEach((source) => {
-    if (!defined(source) || typeof source !== 'object' || Array.isArray(source)) {
-      return
-    }
-    Object.keys(source).forEach((axisName) => {
-      const axis = String(axisName).trim()
-      if (!axis) return
-      out[axis] = source[axisName]
-    })
-  })
-
-  return out
-}
-
-function applyAxisTargets(controller, axisValues, getOptions = undefined) {
-  Object.keys(axisValues).forEach((axisName) => {
-    const axis = String(axisName)
-    const targetDeg = Number(axisValues[axisName])
-    if (!Number.isFinite(targetDeg)) return
-
-    if (typeof controller.setAxisTarget === 'function') {
-      controller.setAxisTarget(axis, targetDeg, getOptions?.(axis))
-    } else if (Object.prototype.hasOwnProperty.call(controller, axis)) {
-      controller[axis] = targetDeg
-    }
-  })
-}
-
-function applyAxisDeltas(controller, axisValues, getOptions = undefined) {
-  Object.keys(axisValues).forEach((axisName) => {
-    const axis = String(axisName)
-    const deltaDeg = Number(axisValues[axisName])
-    if (!Number.isFinite(deltaDeg) || deltaDeg === 0) return
-
-    const currentDeg = numberOr(controller[axis], 0)
-    if (typeof controller.stepAxisTarget === 'function') {
-      controller.stepAxisTarget(axis, deltaDeg, currentDeg, getOptions?.(axis))
-    } else if (Object.prototype.hasOwnProperty.call(controller, axis)) {
-      controller[axis] = currentDeg + deltaDeg
-    }
-  })
-}
-
-function getGimbalAxisTargetOptions(axis) {
-  if (String(axis).toLowerCase() !== 'az') {
-    return undefined
-  }
-
-  return {
-    normalizeTargetDeg: (azDeg) => {
-      let wrapped = Number(azDeg) % 360.0
-      if (wrapped < 0) wrapped += 360.0
-      return wrapped
-    }
-  }
-}
+import { createDefaultCommandBus } from "./command/index.js";
+import { booleanOr } from "./utils.js";
 
 /**
  * Normalize a single observatory payload config into the canonical runtime
@@ -302,7 +138,7 @@ function normalizeGroundObservatoryConfig(nameOrConfig, latitude, longitude, alt
  * payloads, and gimbals.
  */
 class Universe {
-  constructor() {
+  constructor({ commandBus = undefined } = {}) {
     /**
      * The Earth object in the universe.
      * @type {Earth}
@@ -359,223 +195,17 @@ class Universe {
     this._observatories = []
 
     /**
+     * Command bus used by scheduled events and direct runtime commands.
+     * @private
+     */
+    this._commandBus = commandBus ?? createDefaultCommandBus()
+
+    /**
      * Event queue for time-based actions.
      * @type {EventQueue}
      * @private
      */
-    this._events = new EventQueue()
-
-    // Register default event handlers
-    // - trackObject: { observer: siteName, target: objectName }
-    // - setFsmAxes: { observer: siteName, axes: { tip, tilt } }
-    // - stepFsmAxes: { observer: siteName, axes|deltas: { tip, tilt } }
-    // - setSensorZoom: { observer: siteName, sensor?: sensorName, zoomLevel }
-    // - stepSensorZoom: { observer: siteName, sensor?: sensorName, deltaZoomLevel }
-    // - setDirectedEnergyActive: { observer: siteName, device|sensor: payloadName, active }
-    this._events.registerHandler('trackObject', (universe, ev) => {
-      const observerName = ev?.data?.observer ?? ev?.observer
-      const dataHasTarget = ev?.data && Object.prototype.hasOwnProperty.call(ev.data, 'target')
-      const eventHasTarget = Object.prototype.hasOwnProperty.call(ev ?? {}, 'target')
-      const targetProvided = dataHasTarget || eventHasTarget
-      const targetName = ev?.data?.target ?? ev?.target
-      if (!observerName) return
-      const target = (targetName !== null && targetName !== undefined) ? (universe.getObject && universe.getObject(targetName)) : undefined
-      const obs = findObservatoryByName(universe, observerName)
-      if (obs?.gimbal) {
-        if (targetProvided && (targetName === null || targetName === undefined)) {
-          obs.gimbal.trackObject = null
-          obs.gimbal.trackMode = 'fixed'
-          if (typeof obs.gimbal.clearAxisTargets === 'function') {
-            obs.gimbal.clearAxisTargets(true)
-          }
-        } else if (target) {
-          obs.gimbal.trackMode = 'rate'
-          obs.gimbal.trackObject = target
-        }
-      }
-    })
-
-    this._events.registerHandler('stepGimbalAxes', (universe, ev) => {
-      const data = ev?.data ?? {}
-      const observerName = data.observer ?? ev?.observer
-      if (!observerName) return
-
-      const obs = findObservatoryByName(universe, observerName)
-      if (!obs?.gimbal) return
-      const gimbal = obs.gimbal
-      const wasTracking = (gimbal.trackMode === 'rate') || defined(gimbal.trackObject)
-      gimbal.trackObject = null
-      gimbal.trackMode = 'fixed'
-      if (wasTracking && typeof gimbal.clearAxisTargets === 'function') {
-        gimbal.clearAxisTargets(true)
-      }
-
-      const deltas = collectAxisValues(data.axes ?? data.deltas, ev?.axes ?? ev?.deltas)
-      applyAxisDeltas(gimbal, deltas, getGimbalAxisTargetOptions)
-    })
-
-    this._events.registerHandler('stepFsmAxes', (universe, ev) => {
-      const data = ev?.data ?? {}
-      const observerName = data.observer ?? ev?.observer
-      if (!observerName) return
-
-      const obs = findObservatoryByName(universe, observerName)
-      const fsm = obs?.fsm
-      if (!fsm) return
-
-      const deltas = collectAxisValues(data.axes ?? data.deltas, ev?.axes ?? ev?.deltas)
-      applyAxisDeltas(fsm, deltas)
-    })
-
-    this._events.registerHandler('setGimbalAxes', (universe, ev) => {
-      const data = ev?.data ?? {}
-      const observerName = data.observer ?? ev?.observer
-      if (!observerName) return
-
-      const obs = findObservatoryByName(universe, observerName)
-      if (!obs?.gimbal) return
-      const gimbal = obs.gimbal
-      gimbal.trackObject = null
-      gimbal.trackMode = 'fixed'
-
-      applyAxisTargets(gimbal, collectAxisValues(data.axes, ev?.axes), getGimbalAxisTargetOptions)
-    })
-
-    this._events.registerHandler('setFsmAxes', (universe, ev) => {
-      const data = ev?.data ?? {}
-      const observerName = data.observer ?? ev?.observer
-      if (!observerName) return
-
-      const obs = findObservatoryByName(universe, observerName)
-      const fsm = obs?.fsm
-      if (!fsm) return
-
-      applyAxisTargets(fsm, collectAxisValues(data.axes, ev?.axes))
-    })
-
-    this._events.registerHandler('setSensorZoom', (universe, ev) => {
-      const data = ev?.data ?? {}
-      const observerName = data.observer ?? ev?.observer
-      if (!observerName) return
-
-      const observatory = findObservatoryByName(universe, observerName)
-      if (!observatory) return
-
-      const sensorName = data.sensor ?? data.sensor_name ?? ev?.sensor ?? ev?.sensor_name
-      const sensor = findObservatorySensor(observatory, sensorName)
-      if (!sensor || typeof sensor.setZoomLevel !== 'function') return
-
-      const zoomLevel = Number(data.zoomLevel ?? data.zoom_level ?? ev?.zoomLevel ?? ev?.zoom_level)
-      if (!Number.isFinite(zoomLevel)) return
-      sensor.setZoomLevel(zoomLevel)
-    })
-
-    this._events.registerHandler('stepSensorZoom', (universe, ev) => {
-      const data = ev?.data ?? {}
-      const observerName = data.observer ?? ev?.observer
-      if (!observerName) return
-
-      const observatory = findObservatoryByName(universe, observerName)
-      if (!observatory) return
-
-      const sensorName = data.sensor ?? data.sensor_name ?? ev?.sensor ?? ev?.sensor_name
-      const sensor = findObservatorySensor(observatory, sensorName)
-      if (!sensor || typeof sensor.stepZoomLevel !== 'function') return
-
-      const deltaZoomLevel = Number(
-        data.deltaZoomLevel ??
-        data.delta_zoom_level ??
-        ev?.deltaZoomLevel ??
-        ev?.delta_zoom_level
-      )
-      if (!Number.isFinite(deltaZoomLevel) || deltaZoomLevel === 0) return
-      sensor.stepZoomLevel(deltaZoomLevel)
-    })
-
-    this._events.registerHandler('setDirectedEnergyActive', (universe, ev) => {
-      const data = ev?.data ?? {}
-      const observerName = data.observer ?? ev?.observer
-      if (!observerName) return
-
-      const observatory = findObservatoryByName(universe, observerName)
-      if (!observatory) return
-
-      const deviceName = data.device ?? data.sensor ?? data.sensor_name ?? ev?.device ?? ev?.sensor ?? ev?.sensor_name
-      const payload = findObservatorySensor(observatory, deviceName)
-      if (!payload || payload.type !== 'Laser') return
-
-      const activeValue = data.active ?? ev?.active
-      if (activeValue === undefined) return
-      payload.active = booleanOr(activeValue, false)
-    })
-
-    const applyAirVehicleManeuver = (universe, ev) => {
-      const target = resolveAirVehicleForEvent(universe, ev)
-      if (!target) return
-      const data = ev?.data ?? {}
-
-      if (typeof target.update === 'function') {
-        target.update(ev.time, universe)
-      }
-
-      const velocityNed = resolveVelocityNedFromEventData(data, target.heading ?? 0)
-      if (defined(velocityNed)) {
-        target.velocityNed = velocityNed
-      }
-
-      const accelerationNed = resolveAccelerationNedFromEventData(data)
-      if (defined(accelerationNed)) {
-        target.accelerationNed = accelerationNed
-      }
-
-      if (
-        Object.prototype.hasOwnProperty.call(data, 'heading') ||
-        Object.prototype.hasOwnProperty.call(data, 'direction')
-      ) {
-        target.heading = numberOr(data.heading ?? data.direction)
-      }
-    }
-
-    this._events.registerHandler('airvehiclemaneuver', applyAirVehicleManeuver)
-    this._events.registerHandler('setairvehiclevelocityned', (universe, ev) => {
-      const data = ev?.data ?? {}
-      applyAirVehicleManeuver(universe, {
-        ...ev,
-        data: {
-          object: resolveEventObjectName(ev),
-          velocity_ned: data.velocity_ned ?? data.velocityNed ?? data.velocity,
-          velocity_enu: data.velocity_enu ?? data.velocityEnu,
-          speed: data.speed,
-          horizontal_speed: data.horizontal_speed,
-          ground_speed: data.ground_speed,
-          vertical_speed: data.vertical_speed,
-          climb_rate: data.climb_rate,
-          heading: data.heading,
-          direction: data.direction
-        }
-      })
-    })
-    this._events.registerHandler('setairvehicleaccelerationned', (universe, ev) => {
-      const data = ev?.data ?? {}
-      applyAirVehicleManeuver(universe, {
-        ...ev,
-        data: {
-          object: resolveEventObjectName(ev),
-          acceleration_ned: data.acceleration_ned ?? data.accelerationNed ?? data.acceleration,
-          acceleration_enu: data.acceleration_enu ?? data.accelerationEnu
-        }
-      })
-    })
-    this._events.registerHandler('setairvehicleheading', (universe, ev) => {
-      const data = ev?.data ?? {}
-      applyAirVehicleManeuver(universe, {
-        ...ev,
-        data: {
-          object: resolveEventObjectName(ev),
-          heading: data.heading ?? data.direction
-        }
-      })
-    })
+    this._events = new EventQueue({ commandBus: this._commandBus })
   }
 
   /**
@@ -900,6 +530,20 @@ class Universe {
   }
 
   /**
+   * Command bus used for simulation command execution.
+   */
+  get commandBus() {
+    return this._commandBus
+  }
+
+  set commandBus(commandBus) {
+    this._commandBus = commandBus
+    if (this._events) {
+      this._events.commandBus = commandBus
+    }
+  }
+
+  /**
    * Access the universe event queue.
    * @type {EventQueue}
    */
@@ -909,7 +553,7 @@ class Universe {
 
   /**
    * Convenience method to schedule an event.
-   * @param {{ time: JulianDate|string|Date, type?: string, data?: any, handler?: Function }} evt
+   * @param {{ time: JulianDate|string|Date, type?: string, data?: any, command?: Object }} evt
    * @returns {string} Event id
    */
   scheduleEvent(evt) {
@@ -922,7 +566,12 @@ class Universe {
    */
   update(time, forceUpdate = false) {
     // Process due events before state updates
-    this._events.process(time, this)
+    this._events.process(time, {
+      universe: this,
+      time,
+      source: 'scenario',
+      commandBus: this._commandBus
+    })
     // TODO replace this with graph traversal
     this._earth.update(time, this, forceUpdate)
     this._sun.update(time, this, forceUpdate)

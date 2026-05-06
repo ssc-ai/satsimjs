@@ -54,7 +54,13 @@ export class RuntimeClient {
     })
     const payload = await response.json()
     if (!response.ok) {
-      throw new Error(payload.error || `Request failed: ${response.status}`)
+      const error = new Error(payload.error || `Request failed: ${response.status}`)
+      error.status = response.status
+      error.code = payload.code
+      error.errors = payload.errors
+      error.details = payload.details
+      error.payload = payload
+      throw error
     }
     return payload
   }

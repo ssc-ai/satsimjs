@@ -1,4 +1,5 @@
 import Universe from '../engine/Universe.js'
+import { createDefaultCommandBus } from '../engine/command/index.js'
 import { Cartesian3, JulianDate } from '../cesiumExports.js'
 import { createClockContext, loadScenarioRuntime } from '../scenario/index.js'
 import { createRuntimeError } from './errors.js'
@@ -121,7 +122,8 @@ export class SimulationRuntime extends RuntimeEventTarget {
   constructor({
     runtimeId = createRuntimeId(),
     scenarioRegistry,
-    createUniverse = () => new Universe(),
+    commandBus = createDefaultCommandBus(),
+    createUniverse = undefined,
     tickMs = 40,
     now = () => Date.now(),
     sessionManager,
@@ -132,7 +134,8 @@ export class SimulationRuntime extends RuntimeEventTarget {
     super()
     this.runtimeId = String(runtimeId || createRuntimeId())
     this.scenarioRegistry = scenarioRegistry
-    this.createUniverse = createUniverse
+    this.commandBus = commandBus
+    this.createUniverse = createUniverse ?? (() => new Universe({ commandBus: this.commandBus }))
     this.tickMs = Math.max(1, Number(tickMs) || 40)
     this.now = now
     this.sessionManager = sessionManager ?? new SessionManager({ writePolicy, now })
@@ -244,6 +247,9 @@ export class SimulationRuntime extends RuntimeEventTarget {
     }
 
     const nextUniverse = this.createUniverse()
+    if (this.commandBus && nextUniverse) {
+      nextUniverse.commandBus = this.commandBus
+    }
     const nextClock = createClockContext()
     loadScenarioRuntime(nextUniverse, nextClock, resolved.config)
     nextUniverse.update(nextClock.currentTime)
@@ -376,10 +382,16 @@ export class SimulationRuntime extends RuntimeEventTarget {
     const translatedCommands = this.translateIncomingCommands(normalizedCommands, session)
     const runtimeCommands = translatedCommands.filter((command) => this.isRuntimeOnlyCommand(command))
     const scheduledCommands = translatedCommands.filter((command) => !this.isRuntimeOnlyCommand(command))
+    const commandContext = this.createCommandContext(currentTime, session, 'runtime')
+    const validatedScheduledCommands = this.commandBus.validateBatch(scheduledCommands, commandContext)
 
     this.applyRuntimeOnlyCommands(runtimeCommands, { session, currentTime })
-    this.scheduleCommands(scheduledCommands, currentTime, { session })
-    await this.afterCommandsApplied(translatedCommands, { session, currentTime })
+    this.scheduleCommands(validatedScheduledCommands, currentTime, {
+      session,
+      prevalidated: true,
+      source: 'runtime'
+    })
+    await this.afterCommandsApplied([...runtimeCommands, ...validatedScheduledCommands], { session, currentTime })
     return this.emitSnapshot('commands')
   }
 
@@ -577,6 +589,24 @@ export class SimulationRuntime extends RuntimeEventTarget {
   }
 
   /**
+   * Build command execution context for the shared command bus.
+   *
+   * @param {JulianDate} time Simulation time.
+   * @param {object|null} session Runtime session, if any.
+   * @param {string} source Command source label.
+   * @returns {object} Command context.
+   */
+  createCommandContext(time, session = null, source = 'runtime') {
+    return {
+      universe: this.universe,
+      time,
+      source,
+      session,
+      commandBus: this.commandBus
+    }
+  }
+
+  /**
    * Update analog-rate leases from incoming rate commands and return any generated stop commands.
    *
    * @param {object[]} commands Analog-rate commands.
@@ -716,21 +746,18 @@ export class SimulationRuntime extends RuntimeEventTarget {
    * @param {JulianDate} time Simulation time for the events.
    * @param {object} [options]
    */
-  scheduleCommands(commands, time, { session = null, reason = undefined } = {}) {
+  scheduleCommands(commands, time, { session = null, reason = undefined, prevalidated = false, source = 'runtime' } = {}) {
     if (!this.universe || !Array.isArray(commands) || commands.length === 0) {
       return
     }
 
     const eventTime = JulianDate.clone(time ?? this.clock.currentTime, new JulianDate())
-    this.recordRuntimeEvents(commands, eventTime, session)
-    for (const command of commands) {
-      const data = stripRuntimeMetadata(command)
-      this.universe.scheduleEvent({
-        time: JulianDate.clone(eventTime, new JulianDate()),
-        type: command.type,
-        data
-      })
-    }
+    const commandContext = this.createCommandContext(eventTime, session, source)
+    const commandsToExecute = prevalidated
+      ? commands
+      : this.commandBus.validateBatch(commands, commandContext)
+    this.recordRuntimeEvents(commandsToExecute, eventTime, session)
+    this.commandBus.executeBatch(commandsToExecute, commandContext, { validate: false })
     this.universe.update(eventTime, true)
     if (reason) {
       this.emitSnapshot(reason)

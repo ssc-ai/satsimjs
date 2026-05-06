@@ -1145,7 +1145,7 @@ describe('Universe', () => {
       expect(trackableObject1.update).toHaveBeenCalledTimes(3);
     });
 
-    test('should toggle a laser payload through the directed-energy event handler without changing tracking', () => {
+    test('should toggle a laser payload through a scheduled directed-energy command without changing tracking', () => {
       const trackedObject = { name: 'Drone', update: jest.fn() }
       const laser = { name: 'HSV HEL', type: 'Laser', active: false, update: jest.fn() }
       const observatory = {

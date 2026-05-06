@@ -957,13 +957,12 @@ export function scheduleScenarioEvents(universe, viewer, events) {
     }
     if (!jd) return
 
-    const type = String(ev.type || '').toLowerCase()
+    const type = String(ev.type || '')
     const data = { ...ev }
     delete data.time
     delete data.type
 
-    // Enqueue using the universe event queue (handlers registered in Universe)
-    universe.scheduleEvent({ time: jd, type, data })
+    universe.scheduleEvent({ time: jd, command: { type, ...data } })
   })
 }
 
