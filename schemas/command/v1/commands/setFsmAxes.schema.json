@@ -1,0 +1,41 @@
+{
+  "$schema": "http://json-schema.org/draft-07/schema#",
+  "$id": "https://satsimjs.org/schemas/command/v1/commands/setFsmAxes.schema.json",
+  "title": "setFsmAxes",
+  "description": "Sets absolute fast steering mirror axis targets in degrees.",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "type",
+    "observer",
+    "axes"
+  ],
+  "properties": {
+    "type": {
+      "type": "string",
+      "enum": [
+        "setFsmAxes",
+        "set_fsm_axes"
+      ],
+      "description": "Command discriminator. Use canonical 'setFsmAxes' in newly generated commands."
+    },
+    "observer": {
+      "$ref": "https://satsimjs.org/schemas/command/v1/defs.schema.json#/definitions/nonEmptyString",
+      "description": "Observatory/site name that owns the target actuator or sensor."
+    },
+    "axes": {
+      "$ref": "https://satsimjs.org/schemas/command/v1/defs.schema.json#/definitions/axisMap",
+      "description": "Absolute FSM axis values in degrees, commonly tip and tilt."
+    }
+  },
+  "examples": [
+    {
+      "type": "setFsmAxes",
+      "observer": "OBS-1",
+      "axes": {
+        "tip": 0.1,
+        "tilt": -0.2
+      }
+    }
+  ]
+}

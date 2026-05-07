@@ -1,4 +1,5 @@
 import CommandError from './CommandError.js'
+import { validateSchema } from './schemaValidator.js'
 
 function normalizeType(type) {
   return String(type ?? '').trim().toLowerCase()
@@ -66,7 +67,7 @@ class CommandBus {
     return key ? this._commands.get(key) : undefined
   }
 
-  normalize(command, context = {}, index = undefined) {
+  prepare(command, context = {}, index = undefined) {
     if (!command || typeof command !== 'object' || Array.isArray(command)) {
       throw new CommandError('Command must be an object.', {
         index,
@@ -94,9 +95,15 @@ class CommandBus {
       })
     }
 
+    validateSchema(definition.schema, { ...command, type }, {
+      type: definition.type,
+      index
+    })
+
+    const commandContext = { ...context, commandBus: this }
     let normalized = { ...command, type: definition.type }
     if (typeof definition.normalize === 'function') {
-      normalized = definition.normalize(normalized, { ...context, commandBus: this })
+      normalized = definition.normalize(normalized, commandContext)
       if (!normalized || typeof normalized !== 'object' || Array.isArray(normalized)) {
         throw new CommandError(`Command '${definition.type}' normalize() must return an object.`, {
           type: definition.type,
@@ -107,14 +114,11 @@ class CommandBus {
       }
       normalized = { ...normalized, type: definition.type }
     }
-    return normalized
-  }
 
-  validate(command, context = {}, index = undefined) {
-    const normalized = this.normalize(command, context, index)
-    const definition = this.get(normalized.type)
+    let resolved
     try {
-      definition.validate?.(normalized, { ...context, commandBus: this })
+      resolved = definition.resolve?.(normalized, commandContext)
+      definition.validate?.(normalized, commandContext, resolved)
     } catch (error) {
       throw CommandError.from(error, {
         type: normalized.type,
@@ -122,10 +126,25 @@ class CommandBus {
         statusCode: error?.statusCode ?? 400
       })
     }
-    return normalized
+
+    return {
+      command: normalized,
+      definition,
+      resolved,
+      context: commandContext,
+      index: Number.isInteger(index) ? index : null
+    }
   }
 
-  validateBatch(commands, context = {}) {
+  normalize(command, context = {}, index = undefined) {
+    return this.prepare(command, context, index).command
+  }
+
+  validate(command, context = {}, index = undefined) {
+    return this.prepare(command, context, index).command
+  }
+
+  prepareBatch(commands, context = {}) {
     if (!Array.isArray(commands)) {
       throw new CommandError('Commands must be an array.', {
         code: 'COMMAND_BATCH_INVALID',
@@ -133,11 +152,11 @@ class CommandBus {
       })
     }
 
-    const normalizedCommands = []
+    const plans = []
     const errors = []
     commands.forEach((command, index) => {
       try {
-        normalizedCommands.push(this.validate(command, context, index))
+        plans.push(this.prepare(command, context, index))
       } catch (error) {
         errors.push(CommandError.from(error, {
           type: commandType(command) || undefined,
@@ -156,13 +175,19 @@ class CommandBus {
       })
     }
 
-    return normalizedCommands
+    return plans
+  }
+
+  validateBatch(commands, context = {}) {
+    return this.prepareBatch(commands, context).map((plan) => plan.command)
   }
 
   execute(command, context = {}, options = {}) {
-    const normalized = options.validate === false
-      ? { ...command }
-      : this.validate(command, context, options.index)
+    if (options.validate !== false) {
+      return this.executePrepared(this.prepare(command, context, options.index))
+    }
+
+    const normalized = { ...command }
     const definition = this.get(normalized.type)
     if (!definition) {
       throw new CommandError(`Unknown command type: ${normalized.type}`, {
@@ -172,19 +197,27 @@ class CommandBus {
         statusCode: 400
       })
     }
-    return definition.execute(normalized, { ...context, commandBus: this })
+    const commandContext = { ...context, commandBus: this }
+    const resolved = definition.resolve?.(normalized, commandContext)
+    return definition.execute(normalized, commandContext, resolved)
   }
 
   executeBatch(commands, context = {}, options = {}) {
-    const normalizedCommands = options.validate === false
-      ? commands
-      : this.validateBatch(commands, context)
-    return normalizedCommands.map((command, index) => {
-      return this.execute(command, context, {
+    if (options.validate === false) {
+      return commands.map((command, index) => this.execute(command, context, {
         validate: false,
         index
-      })
-    })
+      }))
+    }
+    return this.executePreparedBatch(this.prepareBatch(commands, context))
+  }
+
+  executePrepared(plan) {
+    return plan.definition.execute(plan.command, plan.context, plan.resolved)
+  }
+
+  executePreparedBatch(plans) {
+    return plans.map((plan) => this.executePrepared(plan))
   }
 }
 

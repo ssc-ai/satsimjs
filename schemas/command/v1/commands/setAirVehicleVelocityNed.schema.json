@@ -1,0 +1,199 @@
+{
+  "$schema": "http://json-schema.org/draft-07/schema#",
+  "$id": "https://satsimjs.org/schemas/command/v1/commands/setAirVehicleVelocityNed.schema.json",
+  "title": "setAirVehicleVelocityNed",
+  "description": "Sets air vehicle velocity in NED meters per second. Speed plus heading may be used to derive horizontal NED velocity.",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "type"
+  ],
+  "properties": {
+    "type": {
+      "type": "string",
+      "enum": [
+        "setAirVehicleVelocityNed",
+        "set_air_vehicle_velocity_ned"
+      ],
+      "description": "Command discriminator. Use canonical 'setAirVehicleVelocityNed' in newly generated commands."
+    },
+    "object": {
+      "$ref": "https://satsimjs.org/schemas/command/v1/defs.schema.json#/definitions/nonEmptyString",
+      "description": "Canonical target air vehicle object name."
+    },
+    "vehicle": {
+      "$ref": "https://satsimjs.org/schemas/command/v1/defs.schema.json#/definitions/nonEmptyString",
+      "description": "Alias for object; accepted for command input compatibility."
+    },
+    "name": {
+      "$ref": "https://satsimjs.org/schemas/command/v1/defs.schema.json#/definitions/nonEmptyString",
+      "description": "Alias for object; accepted for command input compatibility."
+    },
+    "target": {
+      "$ref": "https://satsimjs.org/schemas/command/v1/defs.schema.json#/definitions/nonEmptyString",
+      "description": "Alias for object; accepted for command input compatibility."
+    },
+    "velocity_ned": {
+      "$ref": "https://satsimjs.org/schemas/command/v1/defs.schema.json#/definitions/vector3",
+      "description": "Velocity in North-East-Down meters per second. Canonical snake_case scenario field."
+    },
+    "velocityNed": {
+      "$ref": "https://satsimjs.org/schemas/command/v1/defs.schema.json#/definitions/vector3",
+      "description": "Alias for velocity_ned, using camelCase."
+    },
+    "velocity": {
+      "$ref": "https://satsimjs.org/schemas/command/v1/defs.schema.json#/definitions/vector3",
+      "description": "Alias for velocity_ned."
+    },
+    "velocity_enu": {
+      "$ref": "https://satsimjs.org/schemas/command/v1/defs.schema.json#/definitions/vector3",
+      "description": "Velocity in East-North-Up meters per second; converted to NED before execution."
+    },
+    "velocityEnu": {
+      "$ref": "https://satsimjs.org/schemas/command/v1/defs.schema.json#/definitions/vector3",
+      "description": "Alias for velocity_enu, using camelCase."
+    },
+    "speed": {
+      "type": "number",
+      "description": "Horizontal speed in meters per second, resolved with heading/direction into NED velocity."
+    },
+    "horizontal_speed": {
+      "type": "number",
+      "description": "Alias for speed."
+    },
+    "ground_speed": {
+      "type": "number",
+      "description": "Alias for speed."
+    },
+    "vertical_speed": {
+      "type": "number",
+      "description": "Vertical speed in meters per second, positive up; converted to NED down component."
+    },
+    "climb_rate": {
+      "type": "number",
+      "description": "Alias for vertical_speed."
+    },
+    "heading": {
+      "type": "number",
+      "description": "Heading in degrees clockwise from north."
+    },
+    "direction": {
+      "type": "number",
+      "description": "Alias for heading."
+    }
+  },
+  "examples": [
+    {
+      "type": "setAirVehicleVelocityNed",
+      "object": "Drone-1",
+      "speed": 10,
+      "heading": 90
+    }
+  ],
+  "allOf": [
+    {
+      "anyOf": [
+        {
+          "properties": {
+            "object": {}
+          },
+          "required": [
+            "object"
+          ]
+        },
+        {
+          "properties": {
+            "vehicle": {}
+          },
+          "required": [
+            "vehicle"
+          ]
+        },
+        {
+          "properties": {
+            "name": {}
+          },
+          "required": [
+            "name"
+          ]
+        },
+        {
+          "properties": {
+            "target": {}
+          },
+          "required": [
+            "target"
+          ]
+        }
+      ]
+    },
+    {
+      "anyOf": [
+        {
+          "properties": {
+            "velocity_ned": {}
+          },
+          "required": [
+            "velocity_ned"
+          ]
+        },
+        {
+          "properties": {
+            "velocityNed": {}
+          },
+          "required": [
+            "velocityNed"
+          ]
+        },
+        {
+          "properties": {
+            "velocity": {}
+          },
+          "required": [
+            "velocity"
+          ]
+        },
+        {
+          "properties": {
+            "velocity_enu": {}
+          },
+          "required": [
+            "velocity_enu"
+          ]
+        },
+        {
+          "properties": {
+            "velocityEnu": {}
+          },
+          "required": [
+            "velocityEnu"
+          ]
+        },
+        {
+          "properties": {
+            "speed": {}
+          },
+          "required": [
+            "speed"
+          ]
+        },
+        {
+          "properties": {
+            "horizontal_speed": {}
+          },
+          "required": [
+            "horizontal_speed"
+          ]
+        },
+        {
+          "properties": {
+            "ground_speed": {}
+          },
+          "required": [
+            "ground_speed"
+          ]
+        }
+      ]
+    }
+  ]
+}

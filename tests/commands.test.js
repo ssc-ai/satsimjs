@@ -158,10 +158,64 @@ describe('CommandBus built-in commands', () => {
         expect.objectContaining({
           index: 2,
           type: 'setSensorZoom',
-          code: 'COMMAND_ZOOM_LEVEL_REQUIRED'
+          code: 'COMMAND_SCHEMA_INVALID',
+          errors: expect.arrayContaining([
+            expect.objectContaining({
+              keyword: 'anyOf'
+            })
+          ])
         })
       ])
     }
+  })
+
+  test('schema validation rejects unknown public fields before semantic validation', () => {
+    const commandBus = createDefaultCommandBus()
+    const { context } = createCommandContext()
+
+    expect(() => commandBus.validate({
+      type: 'setGimbalAxes',
+      observer: 'Missing',
+      axes: { az: 1 },
+      typo: true
+    }, context)).toThrow(CommandError)
+
+    try {
+      commandBus.validate({
+        type: 'setGimbalAxes',
+        observer: 'Missing',
+        axes: { az: 1 },
+        typo: true
+      }, context)
+    } catch (err) {
+      expect(err).toMatchObject({
+        type: 'setGimbalAxes',
+        code: 'COMMAND_SCHEMA_INVALID',
+        statusCode: 400
+      })
+      expect(err.errors).toEqual(expect.arrayContaining([
+        expect.objectContaining({
+          keyword: 'additionalProperties'
+        })
+      ]))
+    }
+  })
+
+  test('normalizes command type and field aliases to canonical command data', () => {
+    const commandBus = createDefaultCommandBus()
+    const { context } = createCommandContext()
+
+    expect(commandBus.validate({
+      type: 'set_sensor_zoom',
+      observer: 'OBS',
+      sensor_name: 'Camera',
+      zoom_level: 0.6
+    }, context)).toEqual({
+      type: 'setSensorZoom',
+      observer: 'OBS',
+      sensor: 'Camera',
+      zoomLevel: 0.6
+    })
   })
 
   test('registers custom commands', () => {

@@ -1,0 +1,68 @@
+{
+  "$schema": "http://json-schema.org/draft-07/schema#",
+  "$id": "https://satsimjs.org/schemas/command/v1/commands/setSensorZoom.schema.json",
+  "title": "setSensorZoom",
+  "description": "Sets a zoom-capable sensor to an absolute normalized zoom level. Omit sensor to use the observatory primary sensor.",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "type",
+    "observer"
+  ],
+  "properties": {
+    "type": {
+      "type": "string",
+      "enum": [
+        "setSensorZoom",
+        "set_sensor_zoom"
+      ],
+      "description": "Command discriminator. Use canonical 'setSensorZoom' in newly generated commands."
+    },
+    "observer": {
+      "$ref": "https://satsimjs.org/schemas/command/v1/defs.schema.json#/definitions/nonEmptyString",
+      "description": "Observatory/site name that owns the target actuator or sensor."
+    },
+    "sensor": {
+      "$ref": "https://satsimjs.org/schemas/command/v1/defs.schema.json#/definitions/nonEmptyString",
+      "description": "Sensor or payload name. Omit to use the observatory primary sensor where the command allows it."
+    },
+    "sensor_name": {
+      "$ref": "https://satsimjs.org/schemas/command/v1/defs.schema.json#/definitions/nonEmptyString",
+      "description": "Alias for sensor."
+    },
+    "zoomLevel": {
+      "$ref": "https://satsimjs.org/schemas/command/v1/defs.schema.json#/definitions/zoomLevel",
+      "description": "Canonical normalized zoom level from 0 to 1."
+    },
+    "zoom_level": {
+      "$ref": "https://satsimjs.org/schemas/command/v1/defs.schema.json#/definitions/zoomLevel",
+      "description": "Alias for zoomLevel."
+    }
+  },
+  "examples": [
+    {
+      "type": "setSensorZoom",
+      "observer": "OBS-1",
+      "sensor": "Camera",
+      "zoomLevel": 0.75
+    }
+  ],
+  "anyOf": [
+    {
+      "properties": {
+        "zoomLevel": {}
+      },
+      "required": [
+        "zoomLevel"
+      ]
+    },
+    {
+      "properties": {
+        "zoom_level": {}
+      },
+      "required": [
+        "zoom_level"
+      ]
+    }
+  ]
+}

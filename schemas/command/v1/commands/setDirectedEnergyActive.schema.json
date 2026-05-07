@@ -1,0 +1,51 @@
+{
+  "$schema": "http://json-schema.org/draft-07/schema#",
+  "$id": "https://satsimjs.org/schemas/command/v1/commands/setDirectedEnergyActive.schema.json",
+  "title": "setDirectedEnergyActive",
+  "description": "Enables or disables a laser directed-energy payload without changing gimbal tracking state.",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "type",
+    "observer",
+    "active"
+  ],
+  "properties": {
+    "type": {
+      "type": "string",
+      "enum": [
+        "setDirectedEnergyActive",
+        "set_directed_energy_active"
+      ],
+      "description": "Command discriminator. Use canonical 'setDirectedEnergyActive' in newly generated commands."
+    },
+    "observer": {
+      "$ref": "https://satsimjs.org/schemas/command/v1/defs.schema.json#/definitions/nonEmptyString",
+      "description": "Observatory/site name that owns the target actuator or sensor."
+    },
+    "device": {
+      "$ref": "https://satsimjs.org/schemas/command/v1/defs.schema.json#/definitions/nonEmptyString",
+      "description": "Canonical directed-energy payload name."
+    },
+    "sensor": {
+      "$ref": "https://satsimjs.org/schemas/command/v1/defs.schema.json#/definitions/nonEmptyString",
+      "description": "Sensor or payload name. Omit to use the observatory primary sensor where the command allows it."
+    },
+    "sensor_name": {
+      "$ref": "https://satsimjs.org/schemas/command/v1/defs.schema.json#/definitions/nonEmptyString",
+      "description": "Alias for sensor."
+    },
+    "active": {
+      "type": "boolean",
+      "description": "True to activate the laser payload, false to deactivate it."
+    }
+  },
+  "examples": [
+    {
+      "type": "setDirectedEnergyActive",
+      "observer": "OBS-1",
+      "device": "Laser",
+      "active": true
+    }
+  ]
+}

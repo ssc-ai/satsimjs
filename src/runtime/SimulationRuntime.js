@@ -1,10 +1,15 @@
 import Universe from '../engine/Universe.js'
-import { createDefaultCommandBus } from '../engine/command/index.js'
+import {
+  createDefaultCommandBus,
+  getRuntimeAnalogCommandType
+} from '../engine/command/index.js'
+import CommandError from '../engine/command/CommandError.js'
 import { Cartesian3, JulianDate } from '../cesiumExports.js'
 import { createClockContext, loadScenarioRuntime } from '../scenario/index.js'
 import { createRuntimeError } from './errors.js'
 import SessionManager from './SessionManager.js'
 import { buildRuntimeSnapshot } from './snapshot.js'
+import { createDefaultControllerRegistry } from './controllers/index.js'
 
 const DEFAULT_ANALOG_LEASE_MS = 250
 
@@ -20,10 +25,6 @@ function julianDateToIso(value) {
     return null
   }
   return JulianDate.toDate(value).toISOString()
-}
-
-function clamp(value, min, max) {
-  return Math.max(min, Math.min(max, value))
 }
 
 function normalizeSessionId(options) {
@@ -100,7 +101,7 @@ class RuntimeEventTarget {
  * Generic SatSim runtime coordinator.
  *
  * The runtime owns scenario loading, the authoritative clock, Universe updates,
- * session enforcement, ordered command/event logging, and analog-rate leases.
+ * session enforcement, ordered command/event logging, and runtime control leases.
  * Embedding applications can override hook methods to attach domain-specific
  * behavior without coupling the core runtime to HTTP, UDP, or ICD details.
  */
@@ -111,18 +112,21 @@ export class SimulationRuntime extends RuntimeEventTarget {
    * @param {object} [options]
    * @param {string} [options.runtimeId] Stable runtime identifier shown in snapshots.
    * @param {object} [options.scenarioRegistry] Registry with `listScenarios` and `getScenarioById`.
+   * @param {object} [options.commandBus] Command bus for discrete simulation commands.
+   * @param {object} [options.controllerRegistry] Registry for stateful runtime control commands.
    * @param {() => Universe} [options.createUniverse] Factory used for each scenario load.
    * @param {number} [options.tickMs=40] Wall-clock tick interval in milliseconds.
    * @param {() => number} [options.now=Date.now] Clock used for ticks, events, and leases.
    * @param {SessionManager} [options.sessionManager] Session manager to use.
    * @param {'multi'|'single'|'readOnly'} [options.writePolicy='multi'] Policy for created sessions.
    * @param {boolean} [options.requireWriteSession=true] Whether mutating calls require a write session.
-   * @param {number} [options.analogLeaseMs=250] Analog-rate command lease duration.
+   * @param {number} [options.analogLeaseMs=250] Runtime rate-control lease duration.
    */
   constructor({
     runtimeId = createRuntimeId(),
     scenarioRegistry,
     commandBus = createDefaultCommandBus(),
+    controllerRegistry = undefined,
     createUniverse = undefined,
     tickMs = 40,
     now = () => Date.now(),
@@ -135,6 +139,7 @@ export class SimulationRuntime extends RuntimeEventTarget {
     this.runtimeId = String(runtimeId || createRuntimeId())
     this.scenarioRegistry = scenarioRegistry
     this.commandBus = commandBus
+    this.controllerRegistry = controllerRegistry ?? createDefaultControllerRegistry()
     this.createUniverse = createUniverse ?? (() => new Universe({ commandBus: this.commandBus }))
     this.tickMs = Math.max(1, Number(tickMs) || 40)
     this.now = now
@@ -151,14 +156,23 @@ export class SimulationRuntime extends RuntimeEventTarget {
     this.scenarioGeneration = 0
     this.runtimeEventSequence = 0
     this.runtimeEvents = []
-    this._analogGimbalLeases = new Map()
-    this._analogFsmLeases = new Map()
-    this._analogZoomLeases = new Map()
 
     this._timer = null
     this._tickInFlight = false
     this._lastWallTimeMs = 0
     this._closed = false
+  }
+
+  get _analogGimbalLeases() {
+    return this.controllerRegistry?.get('gimbal')?.leases ?? new Map()
+  }
+
+  get _analogFsmLeases() {
+    return this.controllerRegistry?.get('fsm')?.leases ?? new Map()
+  }
+
+  get _analogZoomLeases() {
+    return this.controllerRegistry?.get('sensorZoom')?.leases ?? new Map()
   }
 
   /**
@@ -379,19 +393,40 @@ export class SimulationRuntime extends RuntimeEventTarget {
     const session = this.resolveWriteSession(sessionId)
     const currentTime = JulianDate.clone(this.clock.currentTime, new JulianDate())
     const normalizedCommands = this.normalizeCommands(commands)
-    const translatedCommands = this.translateIncomingCommands(normalizedCommands, session)
-    const runtimeCommands = translatedCommands.filter((command) => this.isRuntimeOnlyCommand(command))
-    const scheduledCommands = translatedCommands.filter((command) => !this.isRuntimeOnlyCommand(command))
+    const commandItems = normalizedCommands.map((command, index) => ({ command, index }))
+    const runtimeCommands = commandItems
+      .filter(({ command }) => this.isRuntimeOnlyCommand(command))
+      .map(({ command }) => command)
+    const controllerCommandItems = commandItems.filter(({ command }) => !this.isRuntimeOnlyCommand(command) && this.isControllerCommand(command))
+    const scheduledCommandItems = commandItems.filter(({ command }) => !this.isRuntimeOnlyCommand(command) && !this.isControllerCommand(command))
     const commandContext = this.createCommandContext(currentTime, session, 'runtime')
-    const validatedScheduledCommands = this.commandBus.validateBatch(scheduledCommands, commandContext)
+    const { scheduledPlans, controllerPlans } = this.prepareRuntimeCommandPlans(
+      scheduledCommandItems,
+      controllerCommandItems,
+      commandContext
+    )
+    const controllerInputPlans = [...scheduledPlans, ...controllerPlans]
+      .sort((a, b) => Number(a.index ?? 0) - Number(b.index ?? 0))
+    const controllerCommitPlan = this.controllerRegistry.planPreparedBatch(controllerInputPlans, {
+      nowMs: this.now(),
+      analogLeaseMs: this.analogLeaseMs
+    })
+    const translatedControllerPlans = controllerCommitPlan.commandPlans.length === controllerCommitPlan.commandItems.length
+      ? controllerCommitPlan.commandPlans
+      : this.prepareGeneratedCommandItems(controllerCommitPlan.commandItems, commandContext)
+    const executionPlans = [...scheduledPlans, ...translatedControllerPlans]
+      .sort((a, b) => Number(a.index ?? 0) - Number(b.index ?? 0))
 
     this.applyRuntimeOnlyCommands(runtimeCommands, { session, currentTime })
-    this.scheduleCommands(validatedScheduledCommands, currentTime, {
+    this.controllerRegistry.commit(controllerCommitPlan)
+    this.schedulePreparedCommands(executionPlans, currentTime, {
       session,
-      prevalidated: true,
       source: 'runtime'
     })
-    await this.afterCommandsApplied([...runtimeCommands, ...validatedScheduledCommands], { session, currentTime })
+    await this.afterCommandsApplied([
+      ...runtimeCommands,
+      ...executionPlans.map((plan) => plan.command)
+    ], { session, currentTime })
     return this.emitSnapshot('commands')
   }
 
@@ -430,25 +465,21 @@ export class SimulationRuntime extends RuntimeEventTarget {
     this.runtimeEvents = []
   }
 
-  analogGimbalLeaseKey(observer) {
-    return String(observer || '').trim()
-  }
-
-  analogFsmLeaseKey(observer) {
-    return String(observer || '').trim()
-  }
-
-  analogZoomLeaseKey(observer, sensor) {
-    return `${String(observer || '').trim()}::${String(sensor || '').trim()}`
+  /**
+   * Remove all active runtime control leases.
+   */
+  clearAnalogLeases() {
+    this.controllerRegistry.clear()
   }
 
   /**
-   * Remove all active analog-rate command leases.
+   * Return true when a command is handled by a runtime controller.
+   *
+   * @param {object} command Command to inspect.
+   * @returns {boolean} Whether the command is a controller command.
    */
-  clearAnalogLeases() {
-    this._analogGimbalLeases.clear()
-    this._analogFsmLeases.clear()
-    this._analogZoomLeases.clear()
+  isControllerCommand(command) {
+    return this.controllerRegistry.isControllerCommand(command)
   }
 
   /**
@@ -458,11 +489,77 @@ export class SimulationRuntime extends RuntimeEventTarget {
    * @returns {boolean} Whether the command is an analog-rate command.
    */
   isAnalogRateCommand(command) {
-    return (
-      command?.type === 'setGimbalAxisRates' ||
-      command?.type === 'setFsmAxisRates' ||
-      command?.type === 'setSensorZoomRate'
-    )
+    return this.isControllerCommand(command) && Boolean(getRuntimeAnalogCommandType(command?.type))
+  }
+
+  throwCommandBatchError(errors) {
+    const orderedErrors = [...errors].sort((a, b) => Number(a.index ?? 0) - Number(b.index ?? 0))
+    const statusCode = orderedErrors.some((error) => Number(error.statusCode) === 409) ? 409 : 400
+    throw new CommandError('Command batch validation failed.', {
+      code: 'COMMAND_BATCH_INVALID',
+      statusCode,
+      errors: orderedErrors.map((error) => error.toJSON())
+    })
+  }
+
+  prepareRuntimeCommandPlans(scheduledItems, controllerItems, context = {}) {
+    const scheduledPlans = []
+    const controllerPlans = []
+    const errors = []
+    scheduledItems.forEach(({ command, index }) => {
+      try {
+        scheduledPlans.push(this.commandBus.prepare(command, context, index))
+      } catch (error) {
+        errors.push(CommandError.from(error, {
+          type: command?.type,
+          index,
+          statusCode: error?.statusCode ?? 400
+        }))
+      }
+    })
+    controllerItems.forEach(({ command, index }) => {
+      try {
+        controllerPlans.push(this.controllerRegistry.prepare(command, context, index))
+      } catch (error) {
+        errors.push(CommandError.from(error, {
+          type: command?.type,
+          index,
+          statusCode: error?.statusCode ?? 400
+        }))
+      }
+    })
+
+    if (errors.length > 0) {
+      this.throwCommandBatchError(errors)
+    }
+
+    return { scheduledPlans, controllerPlans }
+  }
+
+  prepareGeneratedCommandItems(items, context = {}) {
+    return this.prepareCommandItems(items, context)
+  }
+
+  prepareCommandItems(items, context = {}) {
+    const plans = []
+    const errors = []
+    items.forEach(({ command, index }) => {
+      try {
+        plans.push(this.commandBus.prepare(command, context, index))
+      } catch (error) {
+        errors.push(CommandError.from(error, {
+          type: command?.type,
+          index,
+          statusCode: error?.statusCode ?? 400
+        }))
+      }
+    })
+
+    if (errors.length > 0) {
+      this.throwCommandBatchError(errors)
+    }
+
+    return plans
   }
 
   /**
@@ -517,78 +614,6 @@ export class SimulationRuntime extends RuntimeEventTarget {
   }
 
   /**
-   * Build absolute stop commands that freeze analog-controlled actuators at their current state.
-   *
-   * @param {object} options Stop-command options.
-   * @returns {object[]} Absolute commands to schedule.
-   */
-  buildAbsoluteStopCommands({ observer, sensor, includeGimbal = false, includeFsm = false, includeSensor = false, session = null } = {}) {
-    const observatory = this.getObservatoryByName(observer)
-    if (!observatory) {
-      return []
-    }
-
-    const commands = []
-    const gimbal = observatory.gimbal
-    if (includeGimbal && gimbal && observer) {
-      const axes = {}
-      if (Number.isFinite(gimbal.az)) axes.az = gimbal.az
-      if (Number.isFinite(gimbal.el)) axes.el = gimbal.el
-      if (Object.keys(axes).length > 0) {
-        commands.push(this.withRuntimeSession({
-          type: 'setGimbalAxes',
-          observer,
-          axes
-        }, session))
-      }
-    }
-
-    const fsm = this.getObservatoryFsm(observatory)
-    if (includeFsm && fsm && observer) {
-      const axes = {}
-      if (Number.isFinite(fsm.tip)) axes.tip = fsm.tip
-      if (Number.isFinite(fsm.tilt)) axes.tilt = fsm.tilt
-      if (Object.keys(axes).length > 0) {
-        commands.push(this.withRuntimeSession({
-          type: 'setFsmAxes',
-          observer,
-          axes
-        }, session))
-      }
-    }
-
-    if (includeSensor && sensor) {
-      const targetSensor = this.getSensorByName(observatory, sensor)
-      const zoomLevel = Number(targetSensor?.zoomLevel)
-      if (targetSensor && Number.isFinite(zoomLevel)) {
-        commands.push(this.withRuntimeSession({
-          type: 'setSensorZoom',
-          observer,
-          sensor: targetSensor.name,
-          zoomLevel
-        }, session))
-      }
-    }
-
-    return commands
-  }
-
-  /**
-   * Attach internal session metadata to a command for event attribution.
-   *
-   * @param {object} command Command to annotate.
-   * @param {object|null} session Internal session record.
-   * @returns {object} Annotated command.
-   */
-  withRuntimeSession(command, session) {
-    if (!session) return command
-    return {
-      ...command,
-      __runtimeSession: session
-    }
-  }
-
-  /**
    * Build command execution context for the shared command bus.
    *
    * @param {JulianDate} time Simulation time.
@@ -602,141 +627,9 @@ export class SimulationRuntime extends RuntimeEventTarget {
       time,
       source,
       session,
-      commandBus: this.commandBus
+      commandBus: this.commandBus,
+      controllerRegistry: this.controllerRegistry
     }
-  }
-
-  /**
-   * Update analog-rate leases from incoming rate commands and return any generated stop commands.
-   *
-   * @param {object[]} commands Analog-rate commands.
-   * @param {object|null} session Internal session record.
-   * @returns {object[]} Absolute stop commands generated by zero-rate commands.
-   */
-  updateAnalogLeases(commands, session) {
-    const expiresAtMs = this.now() + this.analogLeaseMs
-    const translatedCommands = []
-    for (const command of commands) {
-      if (command?.type === 'setGimbalAxisRates') {
-        const key = this.analogGimbalLeaseKey(command.observer)
-        if (!key) continue
-        const hasActiveRate = Object.values(command.axes ?? {}).some((value) => Number(value) !== 0)
-        if (!hasActiveRate) {
-          const lease = this._analogGimbalLeases.get(key)
-          const hadLease = this._analogGimbalLeases.delete(key)
-          if (hadLease) {
-            translatedCommands.push(...this.buildAbsoluteStopCommands({
-              observer: command.observer,
-              includeGimbal: true,
-              session: lease?.session ?? session
-            }))
-          }
-          continue
-        }
-        this._analogGimbalLeases.set(key, {
-          observer: command.observer,
-          axes: { ...(command.axes ?? {}) },
-          expiresAtMs,
-          session
-        })
-        continue
-      }
-
-      if (command?.type === 'setFsmAxisRates') {
-        const key = this.analogFsmLeaseKey(command.observer)
-        if (!key) continue
-        const hasActiveRate = Object.values(command.axes ?? {}).some((value) => Number(value) !== 0)
-        if (!hasActiveRate) {
-          const lease = this._analogFsmLeases.get(key)
-          const hadLease = this._analogFsmLeases.delete(key)
-          if (hadLease) {
-            translatedCommands.push(...this.buildAbsoluteStopCommands({
-              observer: command.observer,
-              includeFsm: true,
-              session: lease?.session ?? session
-            }))
-          }
-          continue
-        }
-        this._analogFsmLeases.set(key, {
-          observer: command.observer,
-          axes: { ...(command.axes ?? {}) },
-          expiresAtMs,
-          session
-        })
-        continue
-      }
-
-      if (command?.type === 'setSensorZoomRate') {
-        const key = this.analogZoomLeaseKey(command.observer, command.sensor)
-        if (Number(command.zoomRateLevelPerSec) === 0) {
-          const lease = this._analogZoomLeases.get(key)
-          const hadLease = this._analogZoomLeases.delete(key)
-          if (hadLease) {
-            translatedCommands.push(...this.buildAbsoluteStopCommands({
-              observer: command.observer,
-              sensor: command.sensor,
-              includeSensor: true,
-              session: lease?.session ?? session
-            }))
-          }
-          continue
-        }
-        this._analogZoomLeases.set(key, {
-          observer: command.observer,
-          sensor: command.sensor,
-          zoomRateLevelPerSec: Number(command.zoomRateLevelPerSec) || 0,
-          expiresAtMs,
-          session
-        })
-        continue
-      }
-
-      if (command?.type === 'trackObject' || command?.type === 'stepGimbalAxes') {
-        this._analogGimbalLeases.delete(this.analogGimbalLeaseKey(command.observer))
-        continue
-      }
-
-      if (command?.type === 'stepFsmAxes') {
-        this._analogFsmLeases.delete(this.analogFsmLeaseKey(command.observer))
-        continue
-      }
-
-      if (command?.type === 'stepSensorZoom') {
-        if (command.sensor) {
-          this._analogZoomLeases.delete(this.analogZoomLeaseKey(command.observer, command.sensor))
-        } else {
-          for (const [key, lease] of this._analogZoomLeases.entries()) {
-            if (lease.observer === command.observer) {
-              this._analogZoomLeases.delete(key)
-            }
-          }
-        }
-      }
-    }
-    return translatedCommands
-  }
-
-  /**
-   * Translate incoming commands into scheduled commands plus analog lease state changes.
-   *
-   * @param {object[]} commands Normalized commands.
-   * @param {object|null} session Internal session record.
-   * @returns {object[]} Commands to apply immediately.
-   */
-  translateIncomingCommands(commands, session) {
-    const passthroughCommands = []
-    const analogCommands = []
-    for (const command of commands) {
-      if (this.isAnalogRateCommand(command)) {
-        analogCommands.push(command)
-      } else {
-        passthroughCommands.push(command)
-      }
-    }
-
-    const translatedAnalogCommands = this.updateAnalogLeases(analogCommands, session)
-    return [...passthroughCommands, ...translatedAnalogCommands]
   }
 
   /**
@@ -746,18 +639,28 @@ export class SimulationRuntime extends RuntimeEventTarget {
    * @param {JulianDate} time Simulation time for the events.
    * @param {object} [options]
    */
-  scheduleCommands(commands, time, { session = null, reason = undefined, prevalidated = false, source = 'runtime' } = {}) {
+  scheduleCommands(commands, time, { session = null, reason = undefined, source = 'runtime' } = {}) {
     if (!this.universe || !Array.isArray(commands) || commands.length === 0) {
       return
     }
 
     const eventTime = JulianDate.clone(time ?? this.clock.currentTime, new JulianDate())
     const commandContext = this.createCommandContext(eventTime, session, source)
-    const commandsToExecute = prevalidated
-      ? commands
-      : this.commandBus.validateBatch(commands, commandContext)
+    this.schedulePreparedCommands(this.commandBus.prepareBatch(commands, commandContext), eventTime, {
+      session,
+      reason
+    })
+  }
+
+  schedulePreparedCommands(plans, time, { session = null, reason = undefined } = {}) {
+    if (!this.universe || !Array.isArray(plans) || plans.length === 0) {
+      return
+    }
+
+    const eventTime = JulianDate.clone(time ?? this.clock.currentTime, new JulianDate())
+    const commandsToExecute = plans.map((plan) => plan.command)
     this.recordRuntimeEvents(commandsToExecute, eventTime, session)
-    this.commandBus.executeBatch(commandsToExecute, commandContext, { validate: false })
+    this.commandBus.executePreparedBatch(plans)
     this.universe.update(eventTime, true)
     if (reason) {
       this.emitSnapshot(reason)
@@ -765,7 +668,7 @@ export class SimulationRuntime extends RuntimeEventTarget {
   }
 
   /**
-   * Expire stale analog-rate leases and schedule absolute stop commands.
+   * Expire stale runtime control leases and schedule absolute stop commands.
    *
    * @param {number} nowMs Current wall-clock time in milliseconds.
    */
@@ -774,37 +677,11 @@ export class SimulationRuntime extends RuntimeEventTarget {
       return
     }
 
-    const commands = []
-    for (const [key, lease] of this._analogGimbalLeases.entries()) {
-      if (nowMs < lease.expiresAtMs) continue
-      this._analogGimbalLeases.delete(key)
-      commands.push(...this.buildAbsoluteStopCommands({
-        observer: lease.observer,
-        includeGimbal: true,
-        session: lease.session
-      }))
-    }
-
-    for (const [key, lease] of this._analogFsmLeases.entries()) {
-      if (nowMs < lease.expiresAtMs) continue
-      this._analogFsmLeases.delete(key)
-      commands.push(...this.buildAbsoluteStopCommands({
-        observer: lease.observer,
-        includeFsm: true,
-        session: lease.session
-      }))
-    }
-
-    for (const [key, lease] of this._analogZoomLeases.entries()) {
-      if (nowMs < lease.expiresAtMs) continue
-      this._analogZoomLeases.delete(key)
-      commands.push(...this.buildAbsoluteStopCommands({
-        observer: lease.observer,
-        sensor: lease.sensor,
-        includeSensor: true,
-        session: lease.session
-      }))
-    }
+    const commands = this.controllerRegistry.expire({
+      universe: this.universe,
+      time: this.clock.currentTime,
+      nowMs
+    })
 
     this.scheduleCommands(commands, this.clock.currentTime, { reason: 'analog_lease_expired' })
   }
@@ -821,108 +698,26 @@ export class SimulationRuntime extends RuntimeEventTarget {
       return
     }
 
-    const commands = []
-    for (const lease of this._analogGimbalLeases.values()) {
-      commands.push(...this.buildAbsoluteStopCommands({
-        observer: lease.observer,
-        includeGimbal: true,
-        session: lease.session
-      }))
-    }
-
-    for (const lease of this._analogFsmLeases.values()) {
-      commands.push(...this.buildAbsoluteStopCommands({
-        observer: lease.observer,
-        includeFsm: true,
-        session: lease.session
-      }))
-    }
-
-    for (const lease of this._analogZoomLeases.values()) {
-      commands.push(...this.buildAbsoluteStopCommands({
-        observer: lease.observer,
-        sensor: lease.sensor,
-        includeSensor: true,
-        session: lease.session
-      }))
-    }
-
-    this.clearAnalogLeases()
+    const commands = this.controllerRegistry.stopAll({
+      universe: this.universe,
+      time: this.clock.currentTime
+    })
     this.scheduleCommands(commands, this.clock.currentTime, { reason })
   }
 
   /**
-   * Convert active analog-rate leases into absolute commands for the next tick.
+   * Convert active runtime control leases into absolute commands for the next tick.
    *
    * @param {JulianDate} nextTime Next simulation time.
    * @param {number} deltaSec Simulation seconds since the previous tick.
    * @returns {object[]} Absolute commands to schedule.
    */
   translateActiveAnalogCommands(nextTime, deltaSec) {
-    if (!(deltaSec > 0) || !this.universe) {
-      return []
-    }
-
-    const commands = []
-    for (const lease of this._analogGimbalLeases.values()) {
-      const observatory = this.getObservatoryByName(lease.observer)
-      const gimbal = observatory?.gimbal
-      if (!gimbal) continue
-
-      const axes = {}
-      for (const [axisName, rawRate] of Object.entries(lease.axes ?? {})) {
-        const current = Number(gimbal?.[axisName])
-        const rate = Number(rawRate)
-        if (!Number.isFinite(current) || !Number.isFinite(rate) || rate === 0) continue
-        axes[axisName] = current + (rate * deltaSec)
-      }
-      if (Object.keys(axes).length > 0) {
-        commands.push(this.withRuntimeSession({
-          type: 'setGimbalAxes',
-          observer: lease.observer,
-          axes
-        }, lease.session))
-      }
-    }
-
-    for (const lease of this._analogFsmLeases.values()) {
-      const observatory = this.getObservatoryByName(lease.observer)
-      const fsm = this.getObservatoryFsm(observatory)
-      if (!fsm) continue
-
-      const axes = {}
-      for (const [axisName, rawRate] of Object.entries(lease.axes ?? {})) {
-        const current = Number(fsm?.[axisName])
-        const rate = Number(rawRate)
-        if (!Number.isFinite(current) || !Number.isFinite(rate) || rate === 0) continue
-        axes[axisName] = current + (rate * deltaSec)
-      }
-      if (Object.keys(axes).length > 0) {
-        commands.push(this.withRuntimeSession({
-          type: 'setFsmAxes',
-          observer: lease.observer,
-          axes
-        }, lease.session))
-      }
-    }
-
-    for (const lease of this._analogZoomLeases.values()) {
-      const observatory = this.getObservatoryByName(lease.observer)
-      const sensor = this.getSensorByName(observatory, lease.sensor)
-      const currentZoomLevel = Number(sensor?.zoomLevel)
-      const zoomRateLevelPerSec = Number(lease.zoomRateLevelPerSec)
-      if (!sensor || !Number.isFinite(currentZoomLevel) || !Number.isFinite(zoomRateLevelPerSec) || zoomRateLevelPerSec === 0) {
-        continue
-      }
-      commands.push(this.withRuntimeSession({
-        type: 'setSensorZoom',
-        observer: lease.observer,
-        sensor: sensor.name,
-        zoomLevel: clamp(currentZoomLevel + (zoomRateLevelPerSec * deltaSec), 0, 1)
-      }, lease.session))
-    }
-
-    return commands
+    return this.controllerRegistry.tick({
+      universe: this.universe,
+      time: nextTime,
+      deltaSec
+    })
   }
 
   /**

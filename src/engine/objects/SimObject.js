@@ -250,8 +250,9 @@ class SimObject extends TransformGroup {
    * @param {Universe} universe - The universe object.
    * @param {boolean} [forceUpdate=false] - Whether to force an update.
    * @param {boolean} [updateParent=true] - Whether to update the parent object.
+   * @param {boolean} [notifyListeners=true] - Whether to notify visualizer/update listeners.
    */
-  update(time, universe, forceUpdate = false, updateParent = true) {
+  update(time, universe, forceUpdate = false, updateParent = true, notifyListeners = true) {
     if (!forceUpdate && JulianDate.equals(time, this._lastUpdate))
       return;
 
@@ -268,7 +269,9 @@ class SimObject extends TransformGroup {
     this._lastUniverse = universe;
 
     // update any listeners
-    this._updateListeners.forEach(ul => ul.update(time, universe));
+    if (notifyListeners) {
+      this._updateListeners.forEach(ul => ul.update(time, universe));
+    }
   }
 
   /**

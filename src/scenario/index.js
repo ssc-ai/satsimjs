@@ -29,6 +29,7 @@ import {
   normalizeObservatoryFsmConfig,
   normalizeSensorZoomConfig
 } from '../engine/objects/observatoryUtils.js'
+import { validateScheduledCommandShape } from '../engine/command/schemaValidator.js'
 import { booleanOr, numberOr, numberOrUndefined, toCartesian3 } from '../engine/utils.js'
 import {
   createClockContext,
@@ -943,8 +944,11 @@ export function scheduleScenarioEvents(universe, viewer, events) {
   const clock = resolveScenarioClockTarget(viewer) ?? createClockContext()
   if (!Array.isArray(events) || events.length === 0) return
 
-  // Convert scenario event times to absolute JulianDate and enqueue
-  events.forEach((ev) => {
+  const scheduledEvents = events.map((ev, index) => {
+    validateScheduledCommandShape(ev, {
+      type: ev?.type,
+      index
+    })
     const t = ev.time
     let jd
     if (typeof t === 'number') {
@@ -955,15 +959,17 @@ export function scheduleScenarioEvents(universe, viewer, events) {
     } else if (t && t.toString) {
       try { jd = JulianDate.fromDate(new Date(String(t))) } catch (_) { /* ignore */ }
     }
-    if (!jd) return
+    if (!jd) return null
 
     const type = String(ev.type || '')
     const data = { ...ev }
     delete data.time
     delete data.type
 
-    universe.scheduleEvent({ time: jd, command: { type, ...data } })
-  })
+    return { time: jd, command: { type, ...data } }
+  }).filter(Boolean)
+
+  scheduledEvents.forEach((event) => universe.scheduleEvent(event))
 }
 
 /**

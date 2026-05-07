@@ -77,6 +77,34 @@ describe('EventQueue', () => {
     expect(queue.size()).toBe(0)
   })
 
+  test('executes overdue commands at their scheduled event time', () => {
+    const eventTime = JulianDate.addSeconds(base, 5, new JulianDate())
+    const processTime = JulianDate.addSeconds(base, 10, new JulianDate())
+    queue.add({
+      time: eventTime,
+      command: {
+        type: 'customCommand',
+        value: 42
+      }
+    })
+
+    queue.process(processTime, {
+      universe,
+      source: 'test'
+    })
+
+    expect(commandBus.execute).toHaveBeenCalledWith(
+      { type: 'customCommand', value: 42 },
+      expect.objectContaining({
+        universe,
+        time: eventTime,
+        currentTime: processTime,
+        source: 'test',
+        commandBus
+      })
+    )
+  })
+
   test('remove and clear work', () => {
     const e1id = queue.add({ time: base, type: 'x' })
     queue.add({ time: JulianDate.addSeconds(base, 1, new JulianDate()), type: 'y' })

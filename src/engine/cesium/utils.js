@@ -7,13 +7,20 @@ function toSampledPositionProperty(object, context, start, stop, step) {
   start = JulianDate.addSeconds(start, -step, new JulianDate())
   stop = JulianDate.addSeconds(stop, step, new JulianDate())
   const prop = new SampledPositionProperty()
+  const restoreTime = object?.time instanceof JulianDate
+    ? JulianDate.clone(object.time, new JulianDate())
+    : undefined
   let current = JulianDate.clone(start)
   let i = 0
-  while(JulianDate.lessThan(current, stop)) {
-    object.update(current, context)
-    prop.addSample(current.clone(), Cartesian3.clone(object.position))
-    JulianDate.addSeconds(current, step, current)
-    i = i + 1
+  try {
+    while(JulianDate.lessThan(current, stop)) {
+      object.update(current, context, false, true, false)
+      prop.addSample(current.clone(), Cartesian3.clone(object.position))
+      JulianDate.addSeconds(current, step, current)
+      i = i + 1
+    }
+  } finally {
+    restoreAfterPositionSample(object, context, current, restoreTime)
   }
   prop.setInterpolationOptions({
     interpolationDegree : 3,
@@ -22,6 +29,23 @@ function toSampledPositionProperty(object, context, start, stop, step) {
   return prop
 }
 
+function shouldNotifyPositionListeners(viewer, time) {
+  const currentTime = viewer?.clock?.currentTime
+  return !(currentTime instanceof JulianDate) || JulianDate.equals(time, currentTime)
+}
+
+function updateForPositionSample(object, universe, viewer, time) {
+  const notifyListeners = shouldNotifyPositionListeners(viewer, time)
+  object.update(time, universe, false, true, notifyListeners)
+  return notifyListeners ? undefined : JulianDate.clone(viewer.clock.currentTime, new JulianDate())
+}
+
+function restoreAfterPositionSample(object, universe, sampleTime, restoreTime) {
+  if (!(restoreTime instanceof JulianDate) || JulianDate.equals(sampleTime, restoreTime)) {
+    return
+  }
+  object.update(restoreTime, universe, true, true, false)
+}
 
 function createObjectPositionProperty(object, universe, viewer) {
   return new CallbackPositionProperty(function(time, result) {
@@ -31,16 +55,20 @@ function createObjectPositionProperty(object, universe, viewer) {
       this.lastReferenceFrameView = viewer.referenceFrameView
     }
 
-    object.update(time, universe)
-    result = Cartesian3.clone(object.position, result)
-    if (viewer.referenceFrameView === ReferenceFrame.FIXED && object.referenceFrame === ReferenceFrame.INERTIAL) {
-      universe.earth.update(time, universe)
-      universe.earth.transformPointFromWorld(result, result)
-    } else if (viewer.referenceFrameView === ReferenceFrame.INERTIAL && object.referenceFrame === ReferenceFrame.FIXED) {
-      universe.earth.update(time, universe)
-      universe.earth.transformPointToWorld(result, result)
+    const restoreTime = updateForPositionSample(object, universe, viewer, time)
+    try {
+      result = Cartesian3.clone(object.position, result)
+      if (viewer.referenceFrameView === ReferenceFrame.FIXED && object.referenceFrame === ReferenceFrame.INERTIAL) {
+        universe.earth.update(time, universe)
+        universe.earth.transformPointFromWorld(result, result)
+      } else if (viewer.referenceFrameView === ReferenceFrame.INERTIAL && object.referenceFrame === ReferenceFrame.FIXED) {
+        universe.earth.update(time, universe)
+        universe.earth.transformPointToWorld(result, result)
+      }
+      return result
+    } finally {
+      restoreAfterPositionSample(object, universe, time, restoreTime)
     }
-    return result
   }, false, () => viewer.referenceFrameView)
 }
 
@@ -165,6 +193,8 @@ function applyToVisible(universe, observatory, time, objects, callback) {
 export {
   toSampledPositionProperty,
   createObjectPositionProperty,
+  updateForPositionSample,
+  restoreAfterPositionSample,
   createObjectOrientationProperty,
   colorVisibleSatellites,
   getObjectPositionInCesiumFrame

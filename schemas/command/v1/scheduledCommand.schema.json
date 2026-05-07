@@ -1,0 +1,1472 @@
+{
+  "$schema": "http://json-schema.org/draft-07/schema#",
+  "$id": "https://satsimjs.org/schemas/command/v1/scheduledCommand.schema.json",
+  "title": "SatSim Scheduled Command",
+  "description": "Union schema for scenario events. A scheduled command is a normal command with a time field.",
+  "oneOf": [
+    {
+      "$id": "https://satsimjs.org/schemas/command/v1/scheduled/trackObject.schema.json",
+      "title": "Scheduled trackObject",
+      "description": "Scheduled scenario event for trackObject. The time field is either seconds from scenario start or an absolute ISO 8601 date-time string. Points an observatory gimbal at a named simulation object. A null target clears tracking, sets the gimbal to fixed mode, and clears active axis targets.",
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "time",
+        "type",
+        "observer",
+        "target"
+      ],
+      "properties": {
+        "time": {
+          "oneOf": [
+            {
+              "type": "number",
+              "description": "Relative event time in seconds from the scenario start time."
+            },
+            {
+              "type": "string",
+              "format": "date-time",
+              "description": "Absolute event time as an ISO 8601 date-time string."
+            }
+          ],
+          "description": "Scheduled event time."
+        },
+        "type": {
+          "type": "string",
+          "enum": [
+            "trackObject",
+            "track_object"
+          ],
+          "description": "Command discriminator. Use canonical 'trackObject' in newly generated commands."
+        },
+        "observer": {
+          "$ref": "https://satsimjs.org/schemas/command/v1/defs.schema.json#/definitions/nonEmptyString",
+          "description": "Observatory/site name that owns the target actuator or sensor."
+        },
+        "target": {
+          "$ref": "https://satsimjs.org/schemas/command/v1/defs.schema.json#/definitions/nullableObjectName",
+          "description": "Object name to track, or null to clear gimbal tracking."
+        }
+      },
+      "examples": [
+        {
+          "time": 0,
+          "type": "trackObject",
+          "observer": "OBS-1",
+          "target": "Drone-1"
+        },
+        {
+          "time": "2026-04-03T16:00:05Z",
+          "type": "trackObject",
+          "observer": "OBS-1",
+          "target": null
+        }
+      ]
+    },
+    {
+      "$id": "https://satsimjs.org/schemas/command/v1/scheduled/setGimbalAxes.schema.json",
+      "title": "Scheduled setGimbalAxes",
+      "description": "Scheduled scenario event for setGimbalAxes. The time field is either seconds from scenario start or an absolute ISO 8601 date-time string. Sets absolute gimbal axis targets in degrees and leaves the gimbal in fixed mode. Azimuth targets are normalized to 0-360 degrees.",
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "time",
+        "type",
+        "observer",
+        "axes"
+      ],
+      "properties": {
+        "time": {
+          "oneOf": [
+            {
+              "type": "number",
+              "description": "Relative event time in seconds from the scenario start time."
+            },
+            {
+              "type": "string",
+              "format": "date-time",
+              "description": "Absolute event time as an ISO 8601 date-time string."
+            }
+          ],
+          "description": "Scheduled event time."
+        },
+        "type": {
+          "type": "string",
+          "enum": [
+            "setGimbalAxes",
+            "set_gimbal_axes"
+          ],
+          "description": "Command discriminator. Use canonical 'setGimbalAxes' in newly generated commands."
+        },
+        "observer": {
+          "$ref": "https://satsimjs.org/schemas/command/v1/defs.schema.json#/definitions/nonEmptyString",
+          "description": "Observatory/site name that owns the target actuator or sensor."
+        },
+        "axes": {
+          "$ref": "https://satsimjs.org/schemas/command/v1/defs.schema.json#/definitions/axisMap",
+          "description": "Absolute gimbal axis values in degrees, commonly az and el."
+        }
+      },
+      "examples": [
+        {
+          "time": 0,
+          "type": "setGimbalAxes",
+          "observer": "OBS-1",
+          "axes": {
+            "az": 10,
+            "el": 20
+          }
+        }
+      ]
+    },
+    {
+      "$id": "https://satsimjs.org/schemas/command/v1/scheduled/stepGimbalAxes.schema.json",
+      "title": "Scheduled stepGimbalAxes",
+      "description": "Scheduled scenario event for stepGimbalAxes. The time field is either seconds from scenario start or an absolute ISO 8601 date-time string. Steps gimbal axes by degree deltas. Tracking is cleared before the step so manual control has one behavior across clients.",
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "time",
+        "type",
+        "observer"
+      ],
+      "properties": {
+        "time": {
+          "oneOf": [
+            {
+              "type": "number",
+              "description": "Relative event time in seconds from the scenario start time."
+            },
+            {
+              "type": "string",
+              "format": "date-time",
+              "description": "Absolute event time as an ISO 8601 date-time string."
+            }
+          ],
+          "description": "Scheduled event time."
+        },
+        "type": {
+          "type": "string",
+          "enum": [
+            "stepGimbalAxes",
+            "step_gimbal_axes"
+          ],
+          "description": "Command discriminator. Use canonical 'stepGimbalAxes' in newly generated commands."
+        },
+        "observer": {
+          "$ref": "https://satsimjs.org/schemas/command/v1/defs.schema.json#/definitions/nonEmptyString",
+          "description": "Observatory/site name that owns the target actuator or sensor."
+        },
+        "axes": {
+          "$ref": "https://satsimjs.org/schemas/command/v1/defs.schema.json#/definitions/axisMap",
+          "description": "Gimbal axis deltas in degrees, commonly az and el."
+        },
+        "deltas": {
+          "$ref": "https://satsimjs.org/schemas/command/v1/defs.schema.json#/definitions/axisMap",
+          "description": "Alias for axes; accepted for step command input compatibility."
+        }
+      },
+      "examples": [
+        {
+          "time": 0,
+          "type": "stepGimbalAxes",
+          "observer": "OBS-1",
+          "axes": {
+            "az": 1,
+            "el": -0.5
+          }
+        }
+      ],
+      "anyOf": [
+        {
+          "properties": {
+            "axes": {}
+          },
+          "required": [
+            "axes"
+          ]
+        },
+        {
+          "properties": {
+            "deltas": {}
+          },
+          "required": [
+            "deltas"
+          ]
+        }
+      ]
+    },
+    {
+      "$id": "https://satsimjs.org/schemas/command/v1/scheduled/setFsmAxes.schema.json",
+      "title": "Scheduled setFsmAxes",
+      "description": "Scheduled scenario event for setFsmAxes. The time field is either seconds from scenario start or an absolute ISO 8601 date-time string. Sets absolute fast steering mirror axis targets in degrees.",
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "time",
+        "type",
+        "observer",
+        "axes"
+      ],
+      "properties": {
+        "time": {
+          "oneOf": [
+            {
+              "type": "number",
+              "description": "Relative event time in seconds from the scenario start time."
+            },
+            {
+              "type": "string",
+              "format": "date-time",
+              "description": "Absolute event time as an ISO 8601 date-time string."
+            }
+          ],
+          "description": "Scheduled event time."
+        },
+        "type": {
+          "type": "string",
+          "enum": [
+            "setFsmAxes",
+            "set_fsm_axes"
+          ],
+          "description": "Command discriminator. Use canonical 'setFsmAxes' in newly generated commands."
+        },
+        "observer": {
+          "$ref": "https://satsimjs.org/schemas/command/v1/defs.schema.json#/definitions/nonEmptyString",
+          "description": "Observatory/site name that owns the target actuator or sensor."
+        },
+        "axes": {
+          "$ref": "https://satsimjs.org/schemas/command/v1/defs.schema.json#/definitions/axisMap",
+          "description": "Absolute FSM axis values in degrees, commonly tip and tilt."
+        }
+      },
+      "examples": [
+        {
+          "time": 0,
+          "type": "setFsmAxes",
+          "observer": "OBS-1",
+          "axes": {
+            "tip": 0.1,
+            "tilt": -0.2
+          }
+        }
+      ]
+    },
+    {
+      "$id": "https://satsimjs.org/schemas/command/v1/scheduled/stepFsmAxes.schema.json",
+      "title": "Scheduled stepFsmAxes",
+      "description": "Scheduled scenario event for stepFsmAxes. The time field is either seconds from scenario start or an absolute ISO 8601 date-time string. Steps fast steering mirror axes by degree deltas.",
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "time",
+        "type",
+        "observer"
+      ],
+      "properties": {
+        "time": {
+          "oneOf": [
+            {
+              "type": "number",
+              "description": "Relative event time in seconds from the scenario start time."
+            },
+            {
+              "type": "string",
+              "format": "date-time",
+              "description": "Absolute event time as an ISO 8601 date-time string."
+            }
+          ],
+          "description": "Scheduled event time."
+        },
+        "type": {
+          "type": "string",
+          "enum": [
+            "stepFsmAxes",
+            "step_fsm_axes"
+          ],
+          "description": "Command discriminator. Use canonical 'stepFsmAxes' in newly generated commands."
+        },
+        "observer": {
+          "$ref": "https://satsimjs.org/schemas/command/v1/defs.schema.json#/definitions/nonEmptyString",
+          "description": "Observatory/site name that owns the target actuator or sensor."
+        },
+        "axes": {
+          "$ref": "https://satsimjs.org/schemas/command/v1/defs.schema.json#/definitions/axisMap",
+          "description": "FSM axis deltas in degrees, commonly tip and tilt."
+        },
+        "deltas": {
+          "$ref": "https://satsimjs.org/schemas/command/v1/defs.schema.json#/definitions/axisMap",
+          "description": "Alias for axes; accepted for step command input compatibility."
+        }
+      },
+      "examples": [
+        {
+          "time": 0,
+          "type": "stepFsmAxes",
+          "observer": "OBS-1",
+          "axes": {
+            "tip": 0.05,
+            "tilt": -0.05
+          }
+        }
+      ],
+      "anyOf": [
+        {
+          "properties": {
+            "axes": {}
+          },
+          "required": [
+            "axes"
+          ]
+        },
+        {
+          "properties": {
+            "deltas": {}
+          },
+          "required": [
+            "deltas"
+          ]
+        }
+      ]
+    },
+    {
+      "$id": "https://satsimjs.org/schemas/command/v1/scheduled/setSensorZoom.schema.json",
+      "title": "Scheduled setSensorZoom",
+      "description": "Scheduled scenario event for setSensorZoom. The time field is either seconds from scenario start or an absolute ISO 8601 date-time string. Sets a zoom-capable sensor to an absolute normalized zoom level. Omit sensor to use the observatory primary sensor.",
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "time",
+        "type",
+        "observer"
+      ],
+      "properties": {
+        "time": {
+          "oneOf": [
+            {
+              "type": "number",
+              "description": "Relative event time in seconds from the scenario start time."
+            },
+            {
+              "type": "string",
+              "format": "date-time",
+              "description": "Absolute event time as an ISO 8601 date-time string."
+            }
+          ],
+          "description": "Scheduled event time."
+        },
+        "type": {
+          "type": "string",
+          "enum": [
+            "setSensorZoom",
+            "set_sensor_zoom"
+          ],
+          "description": "Command discriminator. Use canonical 'setSensorZoom' in newly generated commands."
+        },
+        "observer": {
+          "$ref": "https://satsimjs.org/schemas/command/v1/defs.schema.json#/definitions/nonEmptyString",
+          "description": "Observatory/site name that owns the target actuator or sensor."
+        },
+        "sensor": {
+          "$ref": "https://satsimjs.org/schemas/command/v1/defs.schema.json#/definitions/nonEmptyString",
+          "description": "Sensor or payload name. Omit to use the observatory primary sensor where the command allows it."
+        },
+        "sensor_name": {
+          "$ref": "https://satsimjs.org/schemas/command/v1/defs.schema.json#/definitions/nonEmptyString",
+          "description": "Alias for sensor."
+        },
+        "zoomLevel": {
+          "$ref": "https://satsimjs.org/schemas/command/v1/defs.schema.json#/definitions/zoomLevel",
+          "description": "Canonical normalized zoom level from 0 to 1."
+        },
+        "zoom_level": {
+          "$ref": "https://satsimjs.org/schemas/command/v1/defs.schema.json#/definitions/zoomLevel",
+          "description": "Alias for zoomLevel."
+        }
+      },
+      "examples": [
+        {
+          "time": 0,
+          "type": "setSensorZoom",
+          "observer": "OBS-1",
+          "sensor": "Camera",
+          "zoomLevel": 0.75
+        }
+      ],
+      "anyOf": [
+        {
+          "properties": {
+            "zoomLevel": {}
+          },
+          "required": [
+            "zoomLevel"
+          ]
+        },
+        {
+          "properties": {
+            "zoom_level": {}
+          },
+          "required": [
+            "zoom_level"
+          ]
+        }
+      ]
+    },
+    {
+      "$id": "https://satsimjs.org/schemas/command/v1/scheduled/stepSensorZoom.schema.json",
+      "title": "Scheduled stepSensorZoom",
+      "description": "Scheduled scenario event for stepSensorZoom. The time field is either seconds from scenario start or an absolute ISO 8601 date-time string. Steps a zoom-capable sensor by a normalized zoom-level delta. Omit sensor to use the observatory primary sensor.",
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "time",
+        "type",
+        "observer"
+      ],
+      "properties": {
+        "time": {
+          "oneOf": [
+            {
+              "type": "number",
+              "description": "Relative event time in seconds from the scenario start time."
+            },
+            {
+              "type": "string",
+              "format": "date-time",
+              "description": "Absolute event time as an ISO 8601 date-time string."
+            }
+          ],
+          "description": "Scheduled event time."
+        },
+        "type": {
+          "type": "string",
+          "enum": [
+            "stepSensorZoom",
+            "step_sensor_zoom"
+          ],
+          "description": "Command discriminator. Use canonical 'stepSensorZoom' in newly generated commands."
+        },
+        "observer": {
+          "$ref": "https://satsimjs.org/schemas/command/v1/defs.schema.json#/definitions/nonEmptyString",
+          "description": "Observatory/site name that owns the target actuator or sensor."
+        },
+        "sensor": {
+          "$ref": "https://satsimjs.org/schemas/command/v1/defs.schema.json#/definitions/nonEmptyString",
+          "description": "Sensor or payload name. Omit to use the observatory primary sensor where the command allows it."
+        },
+        "sensor_name": {
+          "$ref": "https://satsimjs.org/schemas/command/v1/defs.schema.json#/definitions/nonEmptyString",
+          "description": "Alias for sensor."
+        },
+        "deltaZoomLevel": {
+          "type": "number",
+          "description": "Canonical normalized zoom delta. Positive values zoom in; negative values zoom out."
+        },
+        "delta_zoom_level": {
+          "type": "number",
+          "description": "Alias for deltaZoomLevel."
+        }
+      },
+      "examples": [
+        {
+          "time": 0,
+          "type": "stepSensorZoom",
+          "observer": "OBS-1",
+          "sensor": "Camera",
+          "deltaZoomLevel": -0.1
+        }
+      ],
+      "anyOf": [
+        {
+          "properties": {
+            "deltaZoomLevel": {}
+          },
+          "required": [
+            "deltaZoomLevel"
+          ]
+        },
+        {
+          "properties": {
+            "delta_zoom_level": {}
+          },
+          "required": [
+            "delta_zoom_level"
+          ]
+        }
+      ]
+    },
+    {
+      "$id": "https://satsimjs.org/schemas/command/v1/scheduled/setDirectedEnergyActive.schema.json",
+      "title": "Scheduled setDirectedEnergyActive",
+      "description": "Scheduled scenario event for setDirectedEnergyActive. The time field is either seconds from scenario start or an absolute ISO 8601 date-time string. Enables or disables a laser directed-energy payload without changing gimbal tracking state.",
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "time",
+        "type",
+        "observer",
+        "active"
+      ],
+      "properties": {
+        "time": {
+          "oneOf": [
+            {
+              "type": "number",
+              "description": "Relative event time in seconds from the scenario start time."
+            },
+            {
+              "type": "string",
+              "format": "date-time",
+              "description": "Absolute event time as an ISO 8601 date-time string."
+            }
+          ],
+          "description": "Scheduled event time."
+        },
+        "type": {
+          "type": "string",
+          "enum": [
+            "setDirectedEnergyActive",
+            "set_directed_energy_active"
+          ],
+          "description": "Command discriminator. Use canonical 'setDirectedEnergyActive' in newly generated commands."
+        },
+        "observer": {
+          "$ref": "https://satsimjs.org/schemas/command/v1/defs.schema.json#/definitions/nonEmptyString",
+          "description": "Observatory/site name that owns the target actuator or sensor."
+        },
+        "device": {
+          "$ref": "https://satsimjs.org/schemas/command/v1/defs.schema.json#/definitions/nonEmptyString",
+          "description": "Canonical directed-energy payload name."
+        },
+        "sensor": {
+          "$ref": "https://satsimjs.org/schemas/command/v1/defs.schema.json#/definitions/nonEmptyString",
+          "description": "Sensor or payload name. Omit to use the observatory primary sensor where the command allows it."
+        },
+        "sensor_name": {
+          "$ref": "https://satsimjs.org/schemas/command/v1/defs.schema.json#/definitions/nonEmptyString",
+          "description": "Alias for sensor."
+        },
+        "active": {
+          "type": "boolean",
+          "description": "True to activate the laser payload, false to deactivate it."
+        }
+      },
+      "examples": [
+        {
+          "time": 0,
+          "type": "setDirectedEnergyActive",
+          "observer": "OBS-1",
+          "device": "Laser",
+          "active": true
+        }
+      ]
+    },
+    {
+      "$id": "https://satsimjs.org/schemas/command/v1/scheduled/airVehicleManeuver.schema.json",
+      "title": "Scheduled airVehicleManeuver",
+      "description": "Scheduled scenario event for airVehicleManeuver. The time field is either seconds from scenario start or an absolute ISO 8601 date-time string. Applies one or more manual air vehicle state changes. Velocity and acceleration vectors use NED unless an ENU alias is explicitly supplied.",
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "time",
+        "type"
+      ],
+      "properties": {
+        "time": {
+          "oneOf": [
+            {
+              "type": "number",
+              "description": "Relative event time in seconds from the scenario start time."
+            },
+            {
+              "type": "string",
+              "format": "date-time",
+              "description": "Absolute event time as an ISO 8601 date-time string."
+            }
+          ],
+          "description": "Scheduled event time."
+        },
+        "type": {
+          "type": "string",
+          "enum": [
+            "airVehicleManeuver",
+            "air_vehicle_maneuver"
+          ],
+          "description": "Command discriminator. Use canonical 'airVehicleManeuver' in newly generated commands."
+        },
+        "object": {
+          "$ref": "https://satsimjs.org/schemas/command/v1/defs.schema.json#/definitions/nonEmptyString",
+          "description": "Canonical target air vehicle object name."
+        },
+        "vehicle": {
+          "$ref": "https://satsimjs.org/schemas/command/v1/defs.schema.json#/definitions/nonEmptyString",
+          "description": "Alias for object; accepted for command input compatibility."
+        },
+        "name": {
+          "$ref": "https://satsimjs.org/schemas/command/v1/defs.schema.json#/definitions/nonEmptyString",
+          "description": "Alias for object; accepted for command input compatibility."
+        },
+        "target": {
+          "$ref": "https://satsimjs.org/schemas/command/v1/defs.schema.json#/definitions/nonEmptyString",
+          "description": "Alias for object; accepted for command input compatibility."
+        },
+        "velocity_ned": {
+          "$ref": "https://satsimjs.org/schemas/command/v1/defs.schema.json#/definitions/vector3",
+          "description": "Velocity in North-East-Down meters per second. Canonical snake_case scenario field."
+        },
+        "velocityNed": {
+          "$ref": "https://satsimjs.org/schemas/command/v1/defs.schema.json#/definitions/vector3",
+          "description": "Alias for velocity_ned, using camelCase."
+        },
+        "velocity": {
+          "$ref": "https://satsimjs.org/schemas/command/v1/defs.schema.json#/definitions/vector3",
+          "description": "Alias for velocity_ned."
+        },
+        "velocity_enu": {
+          "$ref": "https://satsimjs.org/schemas/command/v1/defs.schema.json#/definitions/vector3",
+          "description": "Velocity in East-North-Up meters per second; converted to NED before execution."
+        },
+        "velocityEnu": {
+          "$ref": "https://satsimjs.org/schemas/command/v1/defs.schema.json#/definitions/vector3",
+          "description": "Alias for velocity_enu, using camelCase."
+        },
+        "speed": {
+          "type": "number",
+          "description": "Horizontal speed in meters per second, resolved with heading/direction into NED velocity."
+        },
+        "horizontal_speed": {
+          "type": "number",
+          "description": "Alias for speed."
+        },
+        "ground_speed": {
+          "type": "number",
+          "description": "Alias for speed."
+        },
+        "vertical_speed": {
+          "type": "number",
+          "description": "Vertical speed in meters per second, positive up; converted to NED down component."
+        },
+        "climb_rate": {
+          "type": "number",
+          "description": "Alias for vertical_speed."
+        },
+        "acceleration_ned": {
+          "$ref": "https://satsimjs.org/schemas/command/v1/defs.schema.json#/definitions/vector3",
+          "description": "Acceleration in North-East-Down meters per second squared. Canonical snake_case scenario field."
+        },
+        "accelerationNed": {
+          "$ref": "https://satsimjs.org/schemas/command/v1/defs.schema.json#/definitions/vector3",
+          "description": "Alias for acceleration_ned, using camelCase."
+        },
+        "acceleration": {
+          "$ref": "https://satsimjs.org/schemas/command/v1/defs.schema.json#/definitions/vector3",
+          "description": "Alias for acceleration_ned."
+        },
+        "acceleration_enu": {
+          "$ref": "https://satsimjs.org/schemas/command/v1/defs.schema.json#/definitions/vector3",
+          "description": "Acceleration in East-North-Up meters per second squared; converted to NED before execution."
+        },
+        "accelerationEnu": {
+          "$ref": "https://satsimjs.org/schemas/command/v1/defs.schema.json#/definitions/vector3",
+          "description": "Alias for acceleration_enu, using camelCase."
+        },
+        "heading": {
+          "type": "number",
+          "description": "Heading in degrees clockwise from north."
+        },
+        "direction": {
+          "type": "number",
+          "description": "Alias for heading."
+        }
+      },
+      "examples": [
+        {
+          "time": 0,
+          "type": "airVehicleManeuver",
+          "object": "Drone-1",
+          "velocity_ned": [
+            1,
+            2,
+            3
+          ],
+          "acceleration_ned": [
+            0,
+            0,
+            0.1
+          ],
+          "heading": 90
+        }
+      ],
+      "allOf": [
+        {
+          "anyOf": [
+            {
+              "properties": {
+                "object": {}
+              },
+              "required": [
+                "object"
+              ]
+            },
+            {
+              "properties": {
+                "vehicle": {}
+              },
+              "required": [
+                "vehicle"
+              ]
+            },
+            {
+              "properties": {
+                "name": {}
+              },
+              "required": [
+                "name"
+              ]
+            },
+            {
+              "properties": {
+                "target": {}
+              },
+              "required": [
+                "target"
+              ]
+            }
+          ]
+        },
+        {
+          "anyOf": [
+            {
+              "properties": {
+                "velocity_ned": {}
+              },
+              "required": [
+                "velocity_ned"
+              ]
+            },
+            {
+              "properties": {
+                "velocityNed": {}
+              },
+              "required": [
+                "velocityNed"
+              ]
+            },
+            {
+              "properties": {
+                "velocity": {}
+              },
+              "required": [
+                "velocity"
+              ]
+            },
+            {
+              "properties": {
+                "velocity_enu": {}
+              },
+              "required": [
+                "velocity_enu"
+              ]
+            },
+            {
+              "properties": {
+                "velocityEnu": {}
+              },
+              "required": [
+                "velocityEnu"
+              ]
+            },
+            {
+              "properties": {
+                "speed": {}
+              },
+              "required": [
+                "speed"
+              ]
+            },
+            {
+              "properties": {
+                "horizontal_speed": {}
+              },
+              "required": [
+                "horizontal_speed"
+              ]
+            },
+            {
+              "properties": {
+                "ground_speed": {}
+              },
+              "required": [
+                "ground_speed"
+              ]
+            },
+            {
+              "properties": {
+                "acceleration_ned": {}
+              },
+              "required": [
+                "acceleration_ned"
+              ]
+            },
+            {
+              "properties": {
+                "accelerationNed": {}
+              },
+              "required": [
+                "accelerationNed"
+              ]
+            },
+            {
+              "properties": {
+                "acceleration": {}
+              },
+              "required": [
+                "acceleration"
+              ]
+            },
+            {
+              "properties": {
+                "acceleration_enu": {}
+              },
+              "required": [
+                "acceleration_enu"
+              ]
+            },
+            {
+              "properties": {
+                "accelerationEnu": {}
+              },
+              "required": [
+                "accelerationEnu"
+              ]
+            },
+            {
+              "properties": {
+                "heading": {}
+              },
+              "required": [
+                "heading"
+              ]
+            },
+            {
+              "properties": {
+                "direction": {}
+              },
+              "required": [
+                "direction"
+              ]
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "$id": "https://satsimjs.org/schemas/command/v1/scheduled/setAirVehicleVelocityNed.schema.json",
+      "title": "Scheduled setAirVehicleVelocityNed",
+      "description": "Scheduled scenario event for setAirVehicleVelocityNed. The time field is either seconds from scenario start or an absolute ISO 8601 date-time string. Sets air vehicle velocity in NED meters per second. Speed plus heading may be used to derive horizontal NED velocity.",
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "time",
+        "type"
+      ],
+      "properties": {
+        "time": {
+          "oneOf": [
+            {
+              "type": "number",
+              "description": "Relative event time in seconds from the scenario start time."
+            },
+            {
+              "type": "string",
+              "format": "date-time",
+              "description": "Absolute event time as an ISO 8601 date-time string."
+            }
+          ],
+          "description": "Scheduled event time."
+        },
+        "type": {
+          "type": "string",
+          "enum": [
+            "setAirVehicleVelocityNed",
+            "set_air_vehicle_velocity_ned"
+          ],
+          "description": "Command discriminator. Use canonical 'setAirVehicleVelocityNed' in newly generated commands."
+        },
+        "object": {
+          "$ref": "https://satsimjs.org/schemas/command/v1/defs.schema.json#/definitions/nonEmptyString",
+          "description": "Canonical target air vehicle object name."
+        },
+        "vehicle": {
+          "$ref": "https://satsimjs.org/schemas/command/v1/defs.schema.json#/definitions/nonEmptyString",
+          "description": "Alias for object; accepted for command input compatibility."
+        },
+        "name": {
+          "$ref": "https://satsimjs.org/schemas/command/v1/defs.schema.json#/definitions/nonEmptyString",
+          "description": "Alias for object; accepted for command input compatibility."
+        },
+        "target": {
+          "$ref": "https://satsimjs.org/schemas/command/v1/defs.schema.json#/definitions/nonEmptyString",
+          "description": "Alias for object; accepted for command input compatibility."
+        },
+        "velocity_ned": {
+          "$ref": "https://satsimjs.org/schemas/command/v1/defs.schema.json#/definitions/vector3",
+          "description": "Velocity in North-East-Down meters per second. Canonical snake_case scenario field."
+        },
+        "velocityNed": {
+          "$ref": "https://satsimjs.org/schemas/command/v1/defs.schema.json#/definitions/vector3",
+          "description": "Alias for velocity_ned, using camelCase."
+        },
+        "velocity": {
+          "$ref": "https://satsimjs.org/schemas/command/v1/defs.schema.json#/definitions/vector3",
+          "description": "Alias for velocity_ned."
+        },
+        "velocity_enu": {
+          "$ref": "https://satsimjs.org/schemas/command/v1/defs.schema.json#/definitions/vector3",
+          "description": "Velocity in East-North-Up meters per second; converted to NED before execution."
+        },
+        "velocityEnu": {
+          "$ref": "https://satsimjs.org/schemas/command/v1/defs.schema.json#/definitions/vector3",
+          "description": "Alias for velocity_enu, using camelCase."
+        },
+        "speed": {
+          "type": "number",
+          "description": "Horizontal speed in meters per second, resolved with heading/direction into NED velocity."
+        },
+        "horizontal_speed": {
+          "type": "number",
+          "description": "Alias for speed."
+        },
+        "ground_speed": {
+          "type": "number",
+          "description": "Alias for speed."
+        },
+        "vertical_speed": {
+          "type": "number",
+          "description": "Vertical speed in meters per second, positive up; converted to NED down component."
+        },
+        "climb_rate": {
+          "type": "number",
+          "description": "Alias for vertical_speed."
+        },
+        "heading": {
+          "type": "number",
+          "description": "Heading in degrees clockwise from north."
+        },
+        "direction": {
+          "type": "number",
+          "description": "Alias for heading."
+        }
+      },
+      "examples": [
+        {
+          "time": 0,
+          "type": "setAirVehicleVelocityNed",
+          "object": "Drone-1",
+          "speed": 10,
+          "heading": 90
+        }
+      ],
+      "allOf": [
+        {
+          "anyOf": [
+            {
+              "properties": {
+                "object": {}
+              },
+              "required": [
+                "object"
+              ]
+            },
+            {
+              "properties": {
+                "vehicle": {}
+              },
+              "required": [
+                "vehicle"
+              ]
+            },
+            {
+              "properties": {
+                "name": {}
+              },
+              "required": [
+                "name"
+              ]
+            },
+            {
+              "properties": {
+                "target": {}
+              },
+              "required": [
+                "target"
+              ]
+            }
+          ]
+        },
+        {
+          "anyOf": [
+            {
+              "properties": {
+                "velocity_ned": {}
+              },
+              "required": [
+                "velocity_ned"
+              ]
+            },
+            {
+              "properties": {
+                "velocityNed": {}
+              },
+              "required": [
+                "velocityNed"
+              ]
+            },
+            {
+              "properties": {
+                "velocity": {}
+              },
+              "required": [
+                "velocity"
+              ]
+            },
+            {
+              "properties": {
+                "velocity_enu": {}
+              },
+              "required": [
+                "velocity_enu"
+              ]
+            },
+            {
+              "properties": {
+                "velocityEnu": {}
+              },
+              "required": [
+                "velocityEnu"
+              ]
+            },
+            {
+              "properties": {
+                "speed": {}
+              },
+              "required": [
+                "speed"
+              ]
+            },
+            {
+              "properties": {
+                "horizontal_speed": {}
+              },
+              "required": [
+                "horizontal_speed"
+              ]
+            },
+            {
+              "properties": {
+                "ground_speed": {}
+              },
+              "required": [
+                "ground_speed"
+              ]
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "$id": "https://satsimjs.org/schemas/command/v1/scheduled/setAirVehicleAccelerationNed.schema.json",
+      "title": "Scheduled setAirVehicleAccelerationNed",
+      "description": "Scheduled scenario event for setAirVehicleAccelerationNed. The time field is either seconds from scenario start or an absolute ISO 8601 date-time string. Sets air vehicle acceleration in NED meters per second squared.",
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "time",
+        "type"
+      ],
+      "properties": {
+        "time": {
+          "oneOf": [
+            {
+              "type": "number",
+              "description": "Relative event time in seconds from the scenario start time."
+            },
+            {
+              "type": "string",
+              "format": "date-time",
+              "description": "Absolute event time as an ISO 8601 date-time string."
+            }
+          ],
+          "description": "Scheduled event time."
+        },
+        "type": {
+          "type": "string",
+          "enum": [
+            "setAirVehicleAccelerationNed",
+            "set_air_vehicle_acceleration_ned"
+          ],
+          "description": "Command discriminator. Use canonical 'setAirVehicleAccelerationNed' in newly generated commands."
+        },
+        "object": {
+          "$ref": "https://satsimjs.org/schemas/command/v1/defs.schema.json#/definitions/nonEmptyString",
+          "description": "Canonical target air vehicle object name."
+        },
+        "vehicle": {
+          "$ref": "https://satsimjs.org/schemas/command/v1/defs.schema.json#/definitions/nonEmptyString",
+          "description": "Alias for object; accepted for command input compatibility."
+        },
+        "name": {
+          "$ref": "https://satsimjs.org/schemas/command/v1/defs.schema.json#/definitions/nonEmptyString",
+          "description": "Alias for object; accepted for command input compatibility."
+        },
+        "target": {
+          "$ref": "https://satsimjs.org/schemas/command/v1/defs.schema.json#/definitions/nonEmptyString",
+          "description": "Alias for object; accepted for command input compatibility."
+        },
+        "acceleration_ned": {
+          "$ref": "https://satsimjs.org/schemas/command/v1/defs.schema.json#/definitions/vector3",
+          "description": "Acceleration in North-East-Down meters per second squared. Canonical snake_case scenario field."
+        },
+        "accelerationNed": {
+          "$ref": "https://satsimjs.org/schemas/command/v1/defs.schema.json#/definitions/vector3",
+          "description": "Alias for acceleration_ned, using camelCase."
+        },
+        "acceleration": {
+          "$ref": "https://satsimjs.org/schemas/command/v1/defs.schema.json#/definitions/vector3",
+          "description": "Alias for acceleration_ned."
+        },
+        "acceleration_enu": {
+          "$ref": "https://satsimjs.org/schemas/command/v1/defs.schema.json#/definitions/vector3",
+          "description": "Acceleration in East-North-Up meters per second squared; converted to NED before execution."
+        },
+        "accelerationEnu": {
+          "$ref": "https://satsimjs.org/schemas/command/v1/defs.schema.json#/definitions/vector3",
+          "description": "Alias for acceleration_enu, using camelCase."
+        }
+      },
+      "examples": [
+        {
+          "time": 0,
+          "type": "setAirVehicleAccelerationNed",
+          "object": "Drone-1",
+          "acceleration_ned": [
+            0,
+            0,
+            1
+          ]
+        }
+      ],
+      "allOf": [
+        {
+          "anyOf": [
+            {
+              "properties": {
+                "object": {}
+              },
+              "required": [
+                "object"
+              ]
+            },
+            {
+              "properties": {
+                "vehicle": {}
+              },
+              "required": [
+                "vehicle"
+              ]
+            },
+            {
+              "properties": {
+                "name": {}
+              },
+              "required": [
+                "name"
+              ]
+            },
+            {
+              "properties": {
+                "target": {}
+              },
+              "required": [
+                "target"
+              ]
+            }
+          ]
+        },
+        {
+          "anyOf": [
+            {
+              "properties": {
+                "acceleration_ned": {}
+              },
+              "required": [
+                "acceleration_ned"
+              ]
+            },
+            {
+              "properties": {
+                "accelerationNed": {}
+              },
+              "required": [
+                "accelerationNed"
+              ]
+            },
+            {
+              "properties": {
+                "acceleration": {}
+              },
+              "required": [
+                "acceleration"
+              ]
+            },
+            {
+              "properties": {
+                "acceleration_enu": {}
+              },
+              "required": [
+                "acceleration_enu"
+              ]
+            },
+            {
+              "properties": {
+                "accelerationEnu": {}
+              },
+              "required": [
+                "accelerationEnu"
+              ]
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "$id": "https://satsimjs.org/schemas/command/v1/scheduled/setAirVehicleHeading.schema.json",
+      "title": "Scheduled setAirVehicleHeading",
+      "description": "Scheduled scenario event for setAirVehicleHeading. The time field is either seconds from scenario start or an absolute ISO 8601 date-time string. Sets air vehicle heading in degrees clockwise from north.",
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "time",
+        "type"
+      ],
+      "properties": {
+        "time": {
+          "oneOf": [
+            {
+              "type": "number",
+              "description": "Relative event time in seconds from the scenario start time."
+            },
+            {
+              "type": "string",
+              "format": "date-time",
+              "description": "Absolute event time as an ISO 8601 date-time string."
+            }
+          ],
+          "description": "Scheduled event time."
+        },
+        "type": {
+          "type": "string",
+          "enum": [
+            "setAirVehicleHeading",
+            "set_air_vehicle_heading"
+          ],
+          "description": "Command discriminator. Use canonical 'setAirVehicleHeading' in newly generated commands."
+        },
+        "object": {
+          "$ref": "https://satsimjs.org/schemas/command/v1/defs.schema.json#/definitions/nonEmptyString",
+          "description": "Canonical target air vehicle object name."
+        },
+        "vehicle": {
+          "$ref": "https://satsimjs.org/schemas/command/v1/defs.schema.json#/definitions/nonEmptyString",
+          "description": "Alias for object; accepted for command input compatibility."
+        },
+        "name": {
+          "$ref": "https://satsimjs.org/schemas/command/v1/defs.schema.json#/definitions/nonEmptyString",
+          "description": "Alias for object; accepted for command input compatibility."
+        },
+        "target": {
+          "$ref": "https://satsimjs.org/schemas/command/v1/defs.schema.json#/definitions/nonEmptyString",
+          "description": "Alias for object; accepted for command input compatibility."
+        },
+        "heading": {
+          "type": "number",
+          "description": "Heading in degrees clockwise from north."
+        },
+        "direction": {
+          "type": "number",
+          "description": "Alias for heading."
+        }
+      },
+      "examples": [
+        {
+          "time": 0,
+          "type": "setAirVehicleHeading",
+          "object": "Drone-1",
+          "heading": 180
+        }
+      ],
+      "allOf": [
+        {
+          "anyOf": [
+            {
+              "properties": {
+                "object": {}
+              },
+              "required": [
+                "object"
+              ]
+            },
+            {
+              "properties": {
+                "vehicle": {}
+              },
+              "required": [
+                "vehicle"
+              ]
+            },
+            {
+              "properties": {
+                "name": {}
+              },
+              "required": [
+                "name"
+              ]
+            },
+            {
+              "properties": {
+                "target": {}
+              },
+              "required": [
+                "target"
+              ]
+            }
+          ]
+        },
+        {
+          "anyOf": [
+            {
+              "properties": {
+                "heading": {}
+              },
+              "required": [
+                "heading"
+              ]
+            },
+            {
+              "properties": {
+                "direction": {}
+              },
+              "required": [
+                "direction"
+              ]
+            }
+          ]
+        }
+      ]
+    }
+  ],
+  "examples": [
+    {
+      "time": 0,
+      "type": "trackObject",
+      "observer": "OBS-1",
+      "target": "Drone-1"
+    },
+    {
+      "time": 0,
+      "type": "setGimbalAxes",
+      "observer": "OBS-1",
+      "axes": {
+        "az": 10,
+        "el": 20
+      }
+    },
+    {
+      "time": 0,
+      "type": "stepGimbalAxes",
+      "observer": "OBS-1",
+      "axes": {
+        "az": 1,
+        "el": -0.5
+      }
+    },
+    {
+      "time": 0,
+      "type": "setFsmAxes",
+      "observer": "OBS-1",
+      "axes": {
+        "tip": 0.1,
+        "tilt": -0.2
+      }
+    },
+    {
+      "time": 0,
+      "type": "stepFsmAxes",
+      "observer": "OBS-1",
+      "axes": {
+        "tip": 0.05,
+        "tilt": -0.05
+      }
+    },
+    {
+      "time": 0,
+      "type": "setSensorZoom",
+      "observer": "OBS-1",
+      "sensor": "Camera",
+      "zoomLevel": 0.75
+    },
+    {
+      "time": 0,
+      "type": "stepSensorZoom",
+      "observer": "OBS-1",
+      "sensor": "Camera",
+      "deltaZoomLevel": -0.1
+    },
+    {
+      "time": 0,
+      "type": "setDirectedEnergyActive",
+      "observer": "OBS-1",
+      "device": "Laser",
+      "active": true
+    },
+    {
+      "time": 0,
+      "type": "airVehicleManeuver",
+      "object": "Drone-1",
+      "velocity_ned": [
+        1,
+        2,
+        3
+      ],
+      "acceleration_ned": [
+        0,
+        0,
+        0.1
+      ],
+      "heading": 90
+    },
+    {
+      "time": 0,
+      "type": "setAirVehicleVelocityNed",
+      "object": "Drone-1",
+      "speed": 10,
+      "heading": 90
+    },
+    {
+      "time": 0,
+      "type": "setAirVehicleAccelerationNed",
+      "object": "Drone-1",
+      "acceleration_ned": [
+        0,
+        0,
+        1
+      ]
+    },
+    {
+      "time": 0,
+      "type": "setAirVehicleHeading",
+      "object": "Drone-1",
+      "heading": 180
+    }
+  ]
+}

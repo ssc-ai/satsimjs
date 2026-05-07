@@ -7,7 +7,13 @@ import SensorFieldOfViewVisualizer from "../engine/cesium/SensorFieldOfVIewVisua
 import LaserBeam from "../engine/cesium/LaserBeam.js"
 import GeoBeltVisualizer from "../engine/cesium/GeoBeltVisualizer.js"
 import CallbackPositionProperty from "../engine/cesium/CallbackPositionProperty.js"
-import { createObjectPositionProperty, createObjectOrientationProperty, getObjectPositionInCesiumFrame } from "../engine/cesium/utils.js"
+import {
+  createObjectPositionProperty,
+  createObjectOrientationProperty,
+  getObjectPositionInCesiumFrame,
+  restoreAfterPositionSample,
+  updateForPositionSample
+} from "../engine/cesium/utils.js"
 import ElectroOpicalSensor from "../engine/objects/ElectroOpticalSensor.js"
 import CoverageGridVisualizer from "../engine/cesium/CoverageGridVisualizer.js"
 import SimObject from "../engine/objects/SimObject.js"
@@ -867,17 +873,21 @@ function mixinViewer(viewer, universe, options) {
         : basePosition.getValue(time, scratchBase)
       if (!defined(base)) return undefined
 
-      simObject.update(time, universe)
-      simObject.transformVectorToWorld(modelOffset, scratchWorldOffset)
+      const restoreTime = updateForPositionSample(simObject, universe, viewer, time)
+      try {
+        simObject.transformVectorToWorld(modelOffset, scratchWorldOffset)
 
-      let offsetInViewFrame = scratchWorldOffset
-      if (viewer.referenceFrameView === ReferenceFrame.FIXED) {
-        universe.earth.update(time, universe)
-        offsetInViewFrame = universe.earth.transformVectorFromWorld(scratchWorldOffset, scratchFrameOffset)
+        let offsetInViewFrame = scratchWorldOffset
+        if (viewer.referenceFrameView === ReferenceFrame.FIXED) {
+          universe.earth.update(time, universe)
+          offsetInViewFrame = universe.earth.transformVectorFromWorld(scratchWorldOffset, scratchFrameOffset)
+        }
+
+        const out = defined(result) ? result : scratchResult
+        return Cartesian3.add(base, offsetInViewFrame, out)
+      } finally {
+        restoreAfterPositionSample(simObject, universe, time, restoreTime)
       }
-
-      const out = defined(result) ? result : scratchResult
-      return Cartesian3.add(base, offsetInViewFrame, out)
     }, false, () => viewer.referenceFrameView)
   }
 

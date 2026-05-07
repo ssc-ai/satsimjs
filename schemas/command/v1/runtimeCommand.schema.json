@@ -1,0 +1,167 @@
+{
+  "$schema": "http://json-schema.org/draft-07/schema#",
+  "$id": "https://satsimjs.org/schemas/command/v1/runtimeCommand.schema.json",
+  "title": "SatSim Runtime Command",
+  "description": "Union schema for runtime API commands, including simulation commands and runtime-only control commands.",
+  "oneOf": [
+    {
+      "$ref": "https://satsimjs.org/schemas/command/v1/commands/trackObject.schema.json"
+    },
+    {
+      "$ref": "https://satsimjs.org/schemas/command/v1/commands/setGimbalAxes.schema.json"
+    },
+    {
+      "$ref": "https://satsimjs.org/schemas/command/v1/commands/stepGimbalAxes.schema.json"
+    },
+    {
+      "$ref": "https://satsimjs.org/schemas/command/v1/commands/setFsmAxes.schema.json"
+    },
+    {
+      "$ref": "https://satsimjs.org/schemas/command/v1/commands/stepFsmAxes.schema.json"
+    },
+    {
+      "$ref": "https://satsimjs.org/schemas/command/v1/commands/setSensorZoom.schema.json"
+    },
+    {
+      "$ref": "https://satsimjs.org/schemas/command/v1/commands/stepSensorZoom.schema.json"
+    },
+    {
+      "$ref": "https://satsimjs.org/schemas/command/v1/commands/setDirectedEnergyActive.schema.json"
+    },
+    {
+      "$ref": "https://satsimjs.org/schemas/command/v1/commands/airVehicleManeuver.schema.json"
+    },
+    {
+      "$ref": "https://satsimjs.org/schemas/command/v1/commands/setAirVehicleVelocityNed.schema.json"
+    },
+    {
+      "$ref": "https://satsimjs.org/schemas/command/v1/commands/setAirVehicleAccelerationNed.schema.json"
+    },
+    {
+      "$ref": "https://satsimjs.org/schemas/command/v1/commands/setAirVehicleHeading.schema.json"
+    },
+    {
+      "$ref": "https://satsimjs.org/schemas/command/v1/commands/setGimbalAxisRates.schema.json"
+    },
+    {
+      "$ref": "https://satsimjs.org/schemas/command/v1/commands/setFsmAxisRates.schema.json"
+    },
+    {
+      "$ref": "https://satsimjs.org/schemas/command/v1/commands/setSensorZoomRate.schema.json"
+    }
+  ],
+  "examples": [
+    {
+      "type": "trackObject",
+      "observer": "OBS-1",
+      "target": "Drone-1"
+    },
+    {
+      "type": "setGimbalAxes",
+      "observer": "OBS-1",
+      "axes": {
+        "az": 10,
+        "el": 20
+      }
+    },
+    {
+      "type": "stepGimbalAxes",
+      "observer": "OBS-1",
+      "axes": {
+        "az": 1,
+        "el": -0.5
+      }
+    },
+    {
+      "type": "setFsmAxes",
+      "observer": "OBS-1",
+      "axes": {
+        "tip": 0.1,
+        "tilt": -0.2
+      }
+    },
+    {
+      "type": "stepFsmAxes",
+      "observer": "OBS-1",
+      "axes": {
+        "tip": 0.05,
+        "tilt": -0.05
+      }
+    },
+    {
+      "type": "setSensorZoom",
+      "observer": "OBS-1",
+      "sensor": "Camera",
+      "zoomLevel": 0.75
+    },
+    {
+      "type": "stepSensorZoom",
+      "observer": "OBS-1",
+      "sensor": "Camera",
+      "deltaZoomLevel": -0.1
+    },
+    {
+      "type": "setDirectedEnergyActive",
+      "observer": "OBS-1",
+      "device": "Laser",
+      "active": true
+    },
+    {
+      "type": "airVehicleManeuver",
+      "object": "Drone-1",
+      "velocity_ned": [
+        1,
+        2,
+        3
+      ],
+      "acceleration_ned": [
+        0,
+        0,
+        0.1
+      ],
+      "heading": 90
+    },
+    {
+      "type": "setAirVehicleVelocityNed",
+      "object": "Drone-1",
+      "speed": 10,
+      "heading": 90
+    },
+    {
+      "type": "setAirVehicleAccelerationNed",
+      "object": "Drone-1",
+      "acceleration_ned": [
+        0,
+        0,
+        1
+      ]
+    },
+    {
+      "type": "setAirVehicleHeading",
+      "object": "Drone-1",
+      "heading": 180
+    },
+    {
+      "type": "setGimbalAxisRates",
+      "observer": "OBS-1",
+      "axes": {
+        "az": 5,
+        "el": 0
+      }
+    },
+    {
+      "type": "setFsmAxisRates",
+      "observer": "OBS-1",
+      "axes": {
+        "tip": 0.25,
+        "tilt": -0.25
+      }
+    },
+    {
+      "type": "setSensorZoomRate",
+      "observer": "OBS-1",
+      "sensor": "Camera",
+      "zoomRateLevelPerSec": 0.5
+    }
+  ]
+}

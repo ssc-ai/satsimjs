@@ -44,6 +44,21 @@ describe('Scenario event scheduling', () => {
     expect(universe.events.size()).toBe(2)
   })
 
+  test('scheduleScenarioEvents rejects invalid scheduled command shape', () => {
+    expect(() => scheduleScenarioEvents(universe, viewer, [
+      { time: 5, type: 'setGimbalAxes', observer: 'OBS', axes: { az: 1 }, typo: true }
+    ])).toThrow(/Scheduled command schema validation failed/)
+    expect(universe.events.size()).toBe(0)
+  })
+
+  test('scheduleScenarioEvents rejects mixed valid and invalid events atomically', () => {
+    expect(() => scheduleScenarioEvents(universe, viewer, [
+      { time: 5, type: 'trackObject', observer: 'OBS', target: 'SAT' },
+      { time: 10, type: 'setGimbalAxes', observer: 'OBS', axes: { az: 1 }, typo: true }
+    ])).toThrow(/Scheduled command schema validation failed/)
+    expect(universe.events.size()).toBe(0)
+  })
+
   test('trackObject event sets gimbal tracking when due', () => {
     // Setup observatory and target
     const gimbal = { trackMode: 'idle', trackObject: null, update: jest.fn() }

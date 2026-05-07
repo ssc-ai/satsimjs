@@ -74,6 +74,55 @@ function createRegistry(config = createScenarioConfig()) {
   }
 }
 
+function createGimbalSetController() {
+  return {
+    name: 'customGimbalSet',
+    commandDefinitions: [
+      {
+        type: 'customSetGimbalAz',
+        normalize(command) {
+          return {
+            type: command.type,
+            observer: command.observer,
+            az: Number(command.az)
+          }
+        },
+        validate(command) {
+          if (!Number.isFinite(command.az)) {
+            throw new Error('az required')
+          }
+        },
+        apply(command) {
+          return [{
+            type: 'set_gimbal_axes',
+            observer: command.observer,
+            axes: { az: command.az }
+          }]
+        }
+      }
+    ],
+    cloneState() {
+      return {}
+    },
+    commit() {}
+  }
+}
+
+function createObserverOutputController() {
+  return {
+    name: 'observerOutput',
+    observedCommandTypes: ['setGimbalAxes'],
+    commandDefinitions: [],
+    observeCommand(command) {
+      return [{ type: 'setGimbalAxes', observer: command.observer, axes: { az: 0 } }]
+    },
+    cloneState() {
+      return {}
+    },
+    commit() {}
+  }
+}
+
 describe('SimulationRuntime', () => {
   test('loads, starts, stops, snapshots, and resets runtime event generations', async () => {
     let nowMs = Date.parse('2026-04-03T16:00:00Z')
@@ -159,6 +208,37 @@ describe('SimulationRuntime', () => {
     runtime.close()
   })
 
+  test('rejects mixed analog and scheduled command batches without mutating leases', async () => {
+    const runtime = new SimulationRuntime({ scenarioRegistry: createRegistry(), writePolicy: 'multi' })
+    const writer = runtime.createSession({ holderLabel: 'Writer', capability: 'write' })
+    await runtime.loadScenarioById('demo', { sessionId: writer.sessionId })
+
+    await runtime.applyCommands(writer.sessionId, [
+      { type: 'setGimbalAxisRates', observer: 'OBS-1', axes: { az: 5 } }
+    ])
+    expect(runtime._analogGimbalLeases.size).toBe(1)
+    expect(runtime._analogFsmLeases.size).toBe(0)
+
+    await expect(runtime.applyCommands(writer.sessionId, [
+      { type: 'setFsmAxisRates', observer: 'OBS-1', axes: { tip: 1 } },
+      { type: 'setGimbalAxes', observer: 'Missing', axes: { az: 40 } }
+    ])).rejects.toMatchObject({
+      statusCode: 409,
+      errors: [
+        expect.objectContaining({
+          index: 1,
+          type: 'setGimbalAxes',
+          code: 'COMMAND_OBSERVATORY_NOT_FOUND'
+        })
+      ]
+    })
+
+    expect(runtime._analogGimbalLeases.size).toBe(1)
+    expect(runtime._analogFsmLeases.size).toBe(0)
+    expect(runtime.getRuntimeEvents().events).toHaveLength(0)
+    runtime.close()
+  })
+
   test('translates analog rate leases into absolute commands and expires them', async () => {
     let nowMs = Date.parse('2026-04-03T16:00:00Z')
     const runtime = new SimulationRuntime({
@@ -184,6 +264,154 @@ describe('SimulationRuntime', () => {
     expect(events[0].type).toBe('setGimbalAxes')
     expect(events[0].holderLabel).toBe('Writer')
     expect(events[1].type).toBe('setGimbalAxes')
+    runtime.close()
+  })
+
+  test('accepts analog command aliases from command metadata', async () => {
+    const runtime = new SimulationRuntime({ scenarioRegistry: createRegistry(), writePolicy: 'multi' })
+    const writer = runtime.createSession({ holderLabel: 'Writer', capability: 'write' })
+    await runtime.loadScenarioById('demo', { sessionId: writer.sessionId })
+
+    await runtime.applyCommands(writer.sessionId, [
+      { type: 'set_gimbal_axis_rates', observer: 'OBS-1', axes: { az: 5 } }
+    ])
+
+    expect(runtime._analogGimbalLeases.get('OBS-1')).toMatchObject({
+      observer: 'OBS-1',
+      axes: { az: 5 },
+      session: expect.objectContaining({
+        sessionId: writer.sessionId,
+        holderLabel: 'Writer'
+      })
+    })
+    runtime.close()
+  })
+
+  test('later discrete commands cancel active controller leases', async () => {
+    const runtime = new SimulationRuntime({ scenarioRegistry: createRegistry(), writePolicy: 'multi' })
+    const writer = runtime.createSession({ holderLabel: 'Writer', capability: 'write' })
+    await runtime.loadScenarioById('demo', { sessionId: writer.sessionId })
+
+    await runtime.applyCommands(writer.sessionId, [
+      { type: 'setGimbalAxisRates', observer: 'OBS-1', axes: { az: 5 } },
+      { type: 'setFsmAxisRates', observer: 'OBS-1', axes: { tip: 1 } },
+      { type: 'setSensorZoomRate', observer: 'OBS-1', sensor: 'Camera', zoomRateLevelPerSec: 0.25 }
+    ])
+    expect(runtime._analogGimbalLeases.size).toBe(1)
+    expect(runtime._analogFsmLeases.size).toBe(1)
+    expect(runtime._analogZoomLeases.size).toBe(1)
+
+    await runtime.applyCommands(writer.sessionId, [
+      { type: 'setGimbalAxes', observer: 'OBS-1', axes: { az: 20 } },
+      { type: 'stepFsmAxes', observer: 'OBS-1', axes: { tip: 0.5 } },
+      { type: 'setSensorZoom', observer: 'OBS-1', sensor: 'Camera', zoomLevel: 0.75 }
+    ])
+
+    expect(runtime._analogGimbalLeases.size).toBe(0)
+    expect(runtime._analogFsmLeases.size).toBe(0)
+    expect(runtime._analogZoomLeases.size).toBe(0)
+    expect(runtime.translateActiveAnalogCommands(runtime.clock.currentTime, 1)).toEqual([])
+    expect(runtime.getRuntimeEvents().events.map((event) => event.type)).toEqual([
+      'setGimbalAxes',
+      'stepFsmAxes',
+      'setSensorZoom'
+    ])
+    runtime.close()
+  })
+
+  test('controller-generated discrete commands cancel active controller leases', async () => {
+    const runtime = new SimulationRuntime({ scenarioRegistry: createRegistry(), writePolicy: 'multi' })
+    const writer = runtime.createSession({ holderLabel: 'Writer', capability: 'write' })
+    await runtime.loadScenarioById('demo', { sessionId: writer.sessionId })
+    runtime.controllerRegistry.register(createGimbalSetController())
+
+    await runtime.applyCommands(writer.sessionId, [
+      { type: 'setGimbalAxisRates', observer: 'OBS-1', axes: { az: 5 } }
+    ])
+    expect(runtime._analogGimbalLeases.size).toBe(1)
+
+    await runtime.applyCommands(writer.sessionId, [
+      { type: 'customSetGimbalAz', observer: 'OBS-1', az: 20 }
+    ])
+
+    expect(runtime._analogGimbalLeases.size).toBe(0)
+    expect(runtime.translateActiveAnalogCommands(runtime.clock.currentTime, 1)).toEqual([])
+    expect(runtime.getRuntimeEvents().events.map((event) => event.type)).toEqual([
+      'setGimbalAxes'
+    ])
+    runtime.close()
+  })
+
+  test('rejects observer-generated commands atomically', async () => {
+    const runtime = new SimulationRuntime({ scenarioRegistry: createRegistry(), writePolicy: 'multi' })
+    const writer = runtime.createSession({ holderLabel: 'Writer', capability: 'write' })
+    await runtime.loadScenarioById('demo', { sessionId: writer.sessionId })
+    runtime.controllerRegistry.register(createObserverOutputController())
+
+    await runtime.applyCommands(writer.sessionId, [
+      { type: 'setGimbalAxisRates', observer: 'OBS-1', axes: { az: 5 } }
+    ])
+    expect(runtime._analogGimbalLeases.size).toBe(1)
+
+    await expect(runtime.applyCommands(writer.sessionId, [
+      { type: 'setGimbalAxes', observer: 'OBS-1', axes: { az: 20 } }
+    ])).rejects.toMatchObject({
+      statusCode: 400,
+      errors: [
+        expect.objectContaining({
+          index: 0,
+          type: 'setGimbalAxes',
+          code: 'CONTROLLER_OBSERVER_OUTPUT_UNSUPPORTED'
+        })
+      ]
+    })
+
+    expect(runtime._analogGimbalLeases.size).toBe(1)
+    expect(runtime.getRuntimeEvents().events).toHaveLength(0)
+    runtime.close()
+  })
+
+  test('executes generated controller commands in input order with discrete commands', async () => {
+    const runtime = new SimulationRuntime({ scenarioRegistry: createRegistry(), writePolicy: 'multi' })
+    const writer = runtime.createSession({ holderLabel: 'Writer', capability: 'write' })
+    await runtime.loadScenarioById('demo', { sessionId: writer.sessionId })
+    runtime.getObservatoryByName('OBS-1').gimbal.az = 12
+
+    await runtime.applyCommands(writer.sessionId, [
+      { type: 'setGimbalAxisRates', observer: 'OBS-1', axes: { az: 5 } }
+    ])
+    await runtime.applyCommands(writer.sessionId, [
+      { type: 'setGimbalAxisRates', observer: 'OBS-1', axes: { az: 0 } },
+      { type: 'stepFsmAxes', observer: 'OBS-1', axes: { tip: 0.5 } }
+    ])
+
+    expect(runtime.getRuntimeEvents().events.map((event) => event.type)).toEqual([
+      'setGimbalAxes',
+      'stepFsmAxes'
+    ])
+    runtime.close()
+  })
+
+  test('stopAnalogMotion delegates to controllers and emits hold commands', async () => {
+    const runtime = new SimulationRuntime({ scenarioRegistry: createRegistry(), writePolicy: 'multi' })
+    const writer = runtime.createSession({ holderLabel: 'Writer', capability: 'write' })
+    await runtime.loadScenarioById('demo', { sessionId: writer.sessionId })
+
+    await runtime.applyCommands(writer.sessionId, [
+      { type: 'setGimbalAxisRates', observer: 'OBS-1', axes: { az: 5 } },
+      { type: 'setFsmAxisRates', observer: 'OBS-1', axes: { tip: 1 } },
+      { type: 'setSensorZoomRate', observer: 'OBS-1', sensor: 'Camera', zoomRateLevelPerSec: 0.2 }
+    ])
+    runtime.stopAnalogMotion()
+
+    expect(runtime._analogGimbalLeases.size).toBe(0)
+    expect(runtime._analogFsmLeases.size).toBe(0)
+    expect(runtime._analogZoomLeases.size).toBe(0)
+    expect(runtime.getRuntimeEvents().events.map((event) => event.type)).toEqual([
+      'setGimbalAxes',
+      'setFsmAxes',
+      'setSensorZoom'
+    ])
     runtime.close()
   })
 

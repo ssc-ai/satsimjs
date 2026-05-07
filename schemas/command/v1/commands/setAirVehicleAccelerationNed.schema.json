@@ -1,0 +1,150 @@
+{
+  "$schema": "http://json-schema.org/draft-07/schema#",
+  "$id": "https://satsimjs.org/schemas/command/v1/commands/setAirVehicleAccelerationNed.schema.json",
+  "title": "setAirVehicleAccelerationNed",
+  "description": "Sets air vehicle acceleration in NED meters per second squared.",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "type"
+  ],
+  "properties": {
+    "type": {
+      "type": "string",
+      "enum": [
+        "setAirVehicleAccelerationNed",
+        "set_air_vehicle_acceleration_ned"
+      ],
+      "description": "Command discriminator. Use canonical 'setAirVehicleAccelerationNed' in newly generated commands."
+    },
+    "object": {
+      "$ref": "https://satsimjs.org/schemas/command/v1/defs.schema.json#/definitions/nonEmptyString",
+      "description": "Canonical target air vehicle object name."
+    },
+    "vehicle": {
+      "$ref": "https://satsimjs.org/schemas/command/v1/defs.schema.json#/definitions/nonEmptyString",
+      "description": "Alias for object; accepted for command input compatibility."
+    },
+    "name": {
+      "$ref": "https://satsimjs.org/schemas/command/v1/defs.schema.json#/definitions/nonEmptyString",
+      "description": "Alias for object; accepted for command input compatibility."
+    },
+    "target": {
+      "$ref": "https://satsimjs.org/schemas/command/v1/defs.schema.json#/definitions/nonEmptyString",
+      "description": "Alias for object; accepted for command input compatibility."
+    },
+    "acceleration_ned": {
+      "$ref": "https://satsimjs.org/schemas/command/v1/defs.schema.json#/definitions/vector3",
+      "description": "Acceleration in North-East-Down meters per second squared. Canonical snake_case scenario field."
+    },
+    "accelerationNed": {
+      "$ref": "https://satsimjs.org/schemas/command/v1/defs.schema.json#/definitions/vector3",
+      "description": "Alias for acceleration_ned, using camelCase."
+    },
+    "acceleration": {
+      "$ref": "https://satsimjs.org/schemas/command/v1/defs.schema.json#/definitions/vector3",
+      "description": "Alias for acceleration_ned."
+    },
+    "acceleration_enu": {
+      "$ref": "https://satsimjs.org/schemas/command/v1/defs.schema.json#/definitions/vector3",
+      "description": "Acceleration in East-North-Up meters per second squared; converted to NED before execution."
+    },
+    "accelerationEnu": {
+      "$ref": "https://satsimjs.org/schemas/command/v1/defs.schema.json#/definitions/vector3",
+      "description": "Alias for acceleration_enu, using camelCase."
+    }
+  },
+  "examples": [
+    {
+      "type": "setAirVehicleAccelerationNed",
+      "object": "Drone-1",
+      "acceleration_ned": [
+        0,
+        0,
+        1
+      ]
+    }
+  ],
+  "allOf": [
+    {
+      "anyOf": [
+        {
+          "properties": {
+            "object": {}
+          },
+          "required": [
+            "object"
+          ]
+        },
+        {
+          "properties": {
+            "vehicle": {}
+          },
+          "required": [
+            "vehicle"
+          ]
+        },
+        {
+          "properties": {
+            "name": {}
+          },
+          "required": [
+            "name"
+          ]
+        },
+        {
+          "properties": {
+            "target": {}
+          },
+          "required": [
+            "target"
+          ]
+        }
+      ]
+    },
+    {
+      "anyOf": [
+        {
+          "properties": {
+            "acceleration_ned": {}
+          },
+          "required": [
+            "acceleration_ned"
+          ]
+        },
+        {
+          "properties": {
+            "accelerationNed": {}
+          },
+          "required": [
+            "accelerationNed"
+          ]
+        },
+        {
+          "properties": {
+            "acceleration": {}
+          },
+          "required": [
+            "acceleration"
+          ]
+        },
+        {
+          "properties": {
+            "acceleration_enu": {}
+          },
+          "required": [
+            "acceleration_enu"
+          ]
+        },
+        {
+          "properties": {
+            "accelerationEnu": {}
+          },
+          "required": [
+            "accelerationEnu"
+          ]
+        }
+      ]
+    }
+  ]
+}

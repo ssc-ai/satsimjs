@@ -25,13 +25,17 @@ class CommandError extends Error {
   }
 
   toJSON() {
-    return {
+    const json = {
       index: this.index,
       type: this.type,
       code: this.code,
       statusCode: this.statusCode,
       message: this.message
     }
+    if (Array.isArray(this.errors)) {
+      json.errors = this.errors
+    }
+    return json
   }
 
   static from(error, fallback = {}) {

@@ -1,0 +1,68 @@
+{
+  "$schema": "http://json-schema.org/draft-07/schema#",
+  "$id": "https://satsimjs.org/schemas/command/v1/commands/stepSensorZoom.schema.json",
+  "title": "stepSensorZoom",
+  "description": "Steps a zoom-capable sensor by a normalized zoom-level delta. Omit sensor to use the observatory primary sensor.",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "type",
+    "observer"
+  ],
+  "properties": {
+    "type": {
+      "type": "string",
+      "enum": [
+        "stepSensorZoom",
+        "step_sensor_zoom"
+      ],
+      "description": "Command discriminator. Use canonical 'stepSensorZoom' in newly generated commands."
+    },
+    "observer": {
+      "$ref": "https://satsimjs.org/schemas/command/v1/defs.schema.json#/definitions/nonEmptyString",
+      "description": "Observatory/site name that owns the target actuator or sensor."
+    },
+    "sensor": {
+      "$ref": "https://satsimjs.org/schemas/command/v1/defs.schema.json#/definitions/nonEmptyString",
+      "description": "Sensor or payload name. Omit to use the observatory primary sensor where the command allows it."
+    },
+    "sensor_name": {
+      "$ref": "https://satsimjs.org/schemas/command/v1/defs.schema.json#/definitions/nonEmptyString",
+      "description": "Alias for sensor."
+    },
+    "deltaZoomLevel": {
+      "type": "number",
+      "description": "Canonical normalized zoom delta. Positive values zoom in; negative values zoom out."
+    },
+    "delta_zoom_level": {
+      "type": "number",
+      "description": "Alias for deltaZoomLevel."
+    }
+  },
+  "examples": [
+    {
+      "type": "stepSensorZoom",
+      "observer": "OBS-1",
+      "sensor": "Camera",
+      "deltaZoomLevel": -0.1
+    }
+  ],
+  "anyOf": [
+    {
+      "properties": {
+        "deltaZoomLevel": {}
+      },
+      "required": [
+        "deltaZoomLevel"
+      ]
+    },
+    {
+      "properties": {
+        "delta_zoom_level": {}
+      },
+      "required": [
+        "delta_zoom_level"
+      ]
+    }
+  ]
+}

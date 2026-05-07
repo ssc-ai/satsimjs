@@ -1,0 +1,110 @@
+{
+  "$schema": "http://json-schema.org/draft-07/schema#",
+  "$id": "https://satsimjs.org/schemas/command/v1/commands/setAirVehicleHeading.schema.json",
+  "title": "setAirVehicleHeading",
+  "description": "Sets air vehicle heading in degrees clockwise from north.",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "type"
+  ],
+  "properties": {
+    "type": {
+      "type": "string",
+      "enum": [
+        "setAirVehicleHeading",
+        "set_air_vehicle_heading"
+      ],
+      "description": "Command discriminator. Use canonical 'setAirVehicleHeading' in newly generated commands."
+    },
+    "object": {
+      "$ref": "https://satsimjs.org/schemas/command/v1/defs.schema.json#/definitions/nonEmptyString",
+      "description": "Canonical target air vehicle object name."
+    },
+    "vehicle": {
+      "$ref": "https://satsimjs.org/schemas/command/v1/defs.schema.json#/definitions/nonEmptyString",
+      "description": "Alias for object; accepted for command input compatibility."
+    },
+    "name": {
+      "$ref": "https://satsimjs.org/schemas/command/v1/defs.schema.json#/definitions/nonEmptyString",
+      "description": "Alias for object; accepted for command input compatibility."
+    },
+    "target": {
+      "$ref": "https://satsimjs.org/schemas/command/v1/defs.schema.json#/definitions/nonEmptyString",
+      "description": "Alias for object; accepted for command input compatibility."
+    },
+    "heading": {
+      "type": "number",
+      "description": "Heading in degrees clockwise from north."
+    },
+    "direction": {
+      "type": "number",
+      "description": "Alias for heading."
+    }
+  },
+  "examples": [
+    {
+      "type": "setAirVehicleHeading",
+      "object": "Drone-1",
+      "heading": 180
+    }
+  ],
+  "allOf": [
+    {
+      "anyOf": [
+        {
+          "properties": {
+            "object": {}
+          },
+          "required": [
+            "object"
+          ]
+        },
+        {
+          "properties": {
+            "vehicle": {}
+          },
+          "required": [
+            "vehicle"
+          ]
+        },
+        {
+          "properties": {
+            "name": {}
+          },
+          "required": [
+            "name"
+          ]
+        },
+        {
+          "properties": {
+            "target": {}
+          },
+          "required": [
+            "target"
+          ]
+        }
+      ]
+    },
+    {
+      "anyOf": [
+        {
+          "properties": {
+            "heading": {}
+          },
+          "required": [
+            "heading"
+          ]
+        },
+        {
+          "properties": {
+            "direction": {}
+          },
+          "required": [
+            "direction"
+          ]
+        }
+      ]
+    }
+  ]
+}

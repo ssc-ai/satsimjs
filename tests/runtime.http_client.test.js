@@ -164,6 +164,27 @@ describe('HttpRuntimeServer', () => {
         ]
       })
 
+      const badShapeResponse = await fetch(`${baseUrl}/api/v1/runtime/commands`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          sessionId: writer.sessionId,
+          commands: [{ type: 'stepGimbalAxes', observer: 'OBS-1', axes: { az: 1 }, typo: true }]
+        })
+      })
+      const badShapePayload = await badShapeResponse.json()
+      expect(badShapeResponse.status).toBe(400)
+      expect(badShapePayload.errors[0]).toMatchObject({
+        index: 0,
+        type: 'stepGimbalAxes',
+        code: 'COMMAND_SCHEMA_INVALID',
+        errors: expect.arrayContaining([
+          expect.objectContaining({
+            keyword: 'additionalProperties'
+          })
+        ])
+      })
+
       const events = await fetchJson(`${baseUrl}/api/v1/events?after=0`)
       expect(events.events[0]).toMatchObject({
         holderLabel: 'Writer',

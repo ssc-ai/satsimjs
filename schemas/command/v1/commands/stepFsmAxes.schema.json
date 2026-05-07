@@ -1,0 +1,62 @@
+{
+  "$schema": "http://json-schema.org/draft-07/schema#",
+  "$id": "https://satsimjs.org/schemas/command/v1/commands/stepFsmAxes.schema.json",
+  "title": "stepFsmAxes",
+  "description": "Steps fast steering mirror axes by degree deltas.",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "type",
+    "observer"
+  ],
+  "properties": {
+    "type": {
+      "type": "string",
+      "enum": [
+        "stepFsmAxes",
+        "step_fsm_axes"
+      ],
+      "description": "Command discriminator. Use canonical 'stepFsmAxes' in newly generated commands."
+    },
+    "observer": {
+      "$ref": "https://satsimjs.org/schemas/command/v1/defs.schema.json#/definitions/nonEmptyString",
+      "description": "Observatory/site name that owns the target actuator or sensor."
+    },
+    "axes": {
+      "$ref": "https://satsimjs.org/schemas/command/v1/defs.schema.json#/definitions/axisMap",
+      "description": "FSM axis deltas in degrees, commonly tip and tilt."
+    },
+    "deltas": {
+      "$ref": "https://satsimjs.org/schemas/command/v1/defs.schema.json#/definitions/axisMap",
+      "description": "Alias for axes; accepted for step command input compatibility."
+    }
+  },
+  "examples": [
+    {
+      "type": "stepFsmAxes",
+      "observer": "OBS-1",
+      "axes": {
+        "tip": 0.05,
+        "tilt": -0.05
+      }
+    }
+  ],
+  "anyOf": [
+    {
+      "properties": {
+        "axes": {}
+      },
+      "required": [
+        "axes"
+      ]
+    },
+    {
+      "properties": {
+        "deltas": {}
+      },
+      "required": [
+        "deltas"
+      ]
+    }
+  ]
+}

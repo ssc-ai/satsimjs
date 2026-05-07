@@ -117,3 +117,6 @@ The runtime API exposes scenario load/start/stop, snapshots, SSE state
 streaming, ordered runtime events, and session-based write policies:
 `multi`, `single`, or `readOnly`. Domain-specific protocol adapters should be
 composed by the embedding application.
+
+Command schemas and command-family behavior are documented in
+[`docs/commands.md`](docs/commands.md).

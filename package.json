@@ -28,6 +28,7 @@
     "test": "jest --verbose --runInBand",
     "coverage": "jest --verbose --runInBand --collectCoverage",
     "lint": "eslint \"./**/*.js\" --cache --quiet",
+    "schemas:commands": "node scripts/generate-command-schemas.js",
     "serve": "npx http-server . -p 8080 --cors -c-1",
     "clean": "rm -rf app/dist dist"
   },
@@ -58,7 +59,9 @@
   },
   "unpkg": "dist/satsim.js",
   "dependencies": {
-    "cesium": "^1.132.0",
+    "ajv": "^8.20.0",
+    "ajv-formats": "^3.0.1",
+    "cesium": "^1.141.0",
     "satellite.js": "^6.0.0"
   }
 }

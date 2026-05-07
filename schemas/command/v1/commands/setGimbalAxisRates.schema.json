@@ -1,0 +1,41 @@
+{
+  "$schema": "http://json-schema.org/draft-07/schema#",
+  "$id": "https://satsimjs.org/schemas/command/v1/commands/setGimbalAxisRates.schema.json",
+  "title": "setGimbalAxisRates",
+  "description": "Starts, updates, or stops continuous runtime gimbal axis-rate control. Rates are degrees per second; zero rates stop the active lease and freeze the actuator at its current state.",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "type",
+    "observer",
+    "axes"
+  ],
+  "properties": {
+    "type": {
+      "type": "string",
+      "enum": [
+        "setGimbalAxisRates",
+        "set_gimbal_axis_rates"
+      ],
+      "description": "Command discriminator. Use canonical 'setGimbalAxisRates' in newly generated commands."
+    },
+    "observer": {
+      "$ref": "https://satsimjs.org/schemas/command/v1/defs.schema.json#/definitions/nonEmptyString",
+      "description": "Observatory/site name that owns the target actuator or sensor."
+    },
+    "axes": {
+      "$ref": "https://satsimjs.org/schemas/command/v1/defs.schema.json#/definitions/axisMap",
+      "description": "Gimbal axis rates in degrees per second, commonly az and el."
+    }
+  },
+  "examples": [
+    {
+      "type": "setGimbalAxisRates",
+      "observer": "OBS-1",
+      "axes": {
+        "az": 5,
+        "el": 0
+      }
+    }
+  ]
+}

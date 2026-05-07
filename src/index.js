@@ -5,7 +5,20 @@ export { default as Event } from './engine/event/Event.js'
 export { default as EventQueue } from './engine/event/EventQueue.js'
 export { default as CommandBus } from './engine/command/CommandBus.js'
 export { default as CommandError } from './engine/command/CommandError.js'
-export { createDefaultCommandBus, registerBuiltInCommands } from './engine/command/index.js'
+export {
+  commandSchemaVersion,
+  commandSchemas,
+  commandUnionSchema,
+  createDefaultCommandBus,
+  getCommandSchema,
+  getRuntimeAnalogCommandType,
+  getRuntimeCommandMetadata,
+  registerBuiltInCommands,
+  runtimeAnalogCommandMetadataEntries,
+  runtimeCommandMetadataEntries,
+  runtimeCommandUnionSchema,
+  scheduledCommandUnionSchema
+} from './engine/command/index.js'
 
 export { default as Node } from './engine/graph/Node.js'
 export { default as Group } from './engine/graph/Group.js'
@@ -29,6 +42,14 @@ export { default as Observatory } from './engine/objects/Observatory.js'
 export { default as SessionManager } from './runtime/SessionManager.js'
 export { default as SimulationRuntime } from './runtime/SimulationRuntime.js'
 export { default as RuntimeClient } from './runtime/RuntimeClient.js'
+export {
+  ControllerRegistry,
+  createDefaultControllerRegistry,
+  FsmController,
+  GimbalController,
+  registerBuiltInControllers,
+  SensorZoomController
+} from './runtime/controllers/index.js'
 export * as Runtime from './runtime/index.js'
 
 export { default as CallbackPositionProperty } from './engine/cesium/CallbackPositionProperty.js'

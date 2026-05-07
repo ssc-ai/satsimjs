@@ -25,7 +25,7 @@ const commonConfig = {
             test: /\.css$/,
             use: [ 'style-loader', 'css-loader' ]
         }, {
-            test: /\.(png|gif|jpg|jpeg|svg|xml|json)$/,
+            test: /\.(png|gif|jpg|jpeg|svg|xml)$/,
             use: [ 'url-loader' ]
         }]
     }
@@ -52,7 +52,8 @@ const appConfig = {
                 { from: path.join(cesiumSource, cesiumWorkers), to: 'Workers' },
                 { from: path.join(cesiumSource, 'Assets'), to: 'Assets' },
                 { from: path.join(cesiumSource, 'Widgets'), to: 'Widgets' },
-		        { from: path.join(cesiumSource, 'ThirdParty'), to: 'ThirdParty' }
+		        { from: path.join(cesiumSource, 'ThirdParty'), to: 'ThirdParty' },
+                { from: path.resolve(__dirname, 'schemas'), to: 'schemas', noErrorOnMissing: true }
             ]
         }),
         new webpack.DefinePlugin({
@@ -100,7 +101,8 @@ const cdnConfig = {
                 { from: path.join(cesiumSource, cesiumWorkers), to: 'Workers' },
                 { from: path.join(cesiumSource, 'Assets'), to: 'Assets' },
                 { from: path.join(cesiumSource, 'Widgets'), to: 'Widgets' },
-                { from: path.join(cesiumSource, 'ThirdParty'), to: 'ThirdParty' }
+                { from: path.join(cesiumSource, 'ThirdParty'), to: 'ThirdParty' },
+                { from: path.resolve(__dirname, 'schemas'), to: 'schemas', noErrorOnMissing: true }
             ]
         })
     ],
@@ -118,4 +120,3 @@ const cdnConfig = {
 };
 
 export default [appConfig, cdnConfig];
-

@@ -59,7 +59,11 @@ class EventQueue {
     while (i < this._events.length) {
       const e = this._events[i]
       if (JulianDate.lessThan(e.time, currentTime) || JulianDate.equals(e.time, currentTime)) {
-        commandBus.execute(e.command, commandContext)
+        commandBus.execute(e.command, {
+          ...commandContext,
+          time: e.time,
+          currentTime
+        })
         this._events.splice(i, 1)
         continue
       }

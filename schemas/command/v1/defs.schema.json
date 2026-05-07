@@ -1,0 +1,95 @@
+{
+  "$schema": "http://json-schema.org/draft-07/schema#",
+  "$id": "https://satsimjs.org/schemas/command/v1/defs.schema.json",
+  "title": "SatSim Command Shared Definitions",
+  "description": "Shared JSON Schema definitions used by SatSim command and scheduled-command contracts.",
+  "definitions": {
+    "nonEmptyString": {
+      "type": "string",
+      "minLength": 1,
+      "description": "Non-empty string identifier. Whitespace-only values are not valid command targets."
+    },
+    "nullableObjectName": {
+      "oneOf": [
+        {
+          "type": "string",
+          "minLength": 1
+        },
+        {
+          "type": "null"
+        }
+      ],
+      "description": "Object name, or null to explicitly clear the target."
+    },
+    "axisMap": {
+      "type": "object",
+      "minProperties": 1,
+      "additionalProperties": {
+        "type": "number",
+        "description": "Axis value in degrees for absolute commands, or degrees per command/rate for step and runtime rate commands."
+      },
+      "description": "Map of axis names to numeric degree values. Gimbal axes commonly use az/el; FSM axes commonly use tip/tilt.",
+      "examples": [
+        {
+          "az": 10,
+          "el": 20
+        },
+        {
+          "tip": 0.5,
+          "tilt": -0.25
+        }
+      ]
+    },
+    "vector3Array": {
+      "type": "array",
+      "minItems": 3,
+      "maxItems": 3,
+      "items": {
+        "type": "number",
+        "description": "Vector component."
+      },
+      "description": "Three numeric components."
+    },
+    "vector3Object": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "x",
+        "y",
+        "z"
+      ],
+      "properties": {
+        "x": {
+          "type": "number",
+          "description": "X component."
+        },
+        "y": {
+          "type": "number",
+          "description": "Y component."
+        },
+        "z": {
+          "type": "number",
+          "description": "Z component."
+        }
+      },
+      "description": "Object-form vector with x/y/z numeric components."
+    },
+    "vector3": {
+      "oneOf": [
+        {
+          "$ref": "#/definitions/vector3Array"
+        },
+        {
+          "$ref": "#/definitions/vector3Object"
+        }
+      ],
+      "description": "Three-component vector accepted as [x, y, z] or {x, y, z}."
+    },
+    "zoomLevel": {
+      "type": "number",
+      "minimum": 0,
+      "maximum": 1,
+      "description": "Normalized sensor zoom level from 0 to 1."
+    }
+  }
+}

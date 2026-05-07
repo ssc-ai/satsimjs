@@ -1,0 +1,43 @@
+{
+  "$schema": "http://json-schema.org/draft-07/schema#",
+  "$id": "https://satsimjs.org/schemas/command/v1/commands/trackObject.schema.json",
+  "title": "trackObject",
+  "description": "Points an observatory gimbal at a named simulation object. A null target clears tracking, sets the gimbal to fixed mode, and clears active axis targets.",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "type",
+    "observer",
+    "target"
+  ],
+  "properties": {
+    "type": {
+      "type": "string",
+      "enum": [
+        "trackObject",
+        "track_object"
+      ],
+      "description": "Command discriminator. Use canonical 'trackObject' in newly generated commands."
+    },
+    "observer": {
+      "$ref": "https://satsimjs.org/schemas/command/v1/defs.schema.json#/definitions/nonEmptyString",
+      "description": "Observatory/site name that owns the target actuator or sensor."
+    },
+    "target": {
+      "$ref": "https://satsimjs.org/schemas/command/v1/defs.schema.json#/definitions/nullableObjectName",
+      "description": "Object name to track, or null to clear gimbal tracking."
+    }
+  },
+  "examples": [
+    {
+      "type": "trackObject",
+      "observer": "OBS-1",
+      "target": "Drone-1"
+    },
+    {
+      "type": "trackObject",
+      "observer": "OBS-1",
+      "target": null
+    }
+  ]
+}

@@ -1,0 +1,51 @@
+{
+  "$schema": "http://json-schema.org/draft-07/schema#",
+  "$id": "https://satsimjs.org/schemas/command/v1/commands/setSensorZoomRate.schema.json",
+  "title": "setSensorZoomRate",
+  "description": "Starts, updates, or stops continuous runtime zoom-rate control for a zoom-capable sensor. Zero rate stops the active lease and freezes current zoom.",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "type",
+    "observer",
+    "zoomRateLevelPerSec"
+  ],
+  "properties": {
+    "type": {
+      "type": "string",
+      "enum": [
+        "setSensorZoomRate",
+        "set_sensor_zoom_rate"
+      ],
+      "description": "Command discriminator. Use canonical 'setSensorZoomRate' in newly generated commands."
+    },
+    "observer": {
+      "$ref": "https://satsimjs.org/schemas/command/v1/defs.schema.json#/definitions/nonEmptyString",
+      "description": "Observatory/site name that owns the target actuator or sensor."
+    },
+    "sensor": {
+      "$ref": "https://satsimjs.org/schemas/command/v1/defs.schema.json#/definitions/nonEmptyString",
+      "description": "Sensor or payload name. Omit to use the observatory primary sensor where the command allows it."
+    },
+    "sensor_name": {
+      "$ref": "https://satsimjs.org/schemas/command/v1/defs.schema.json#/definitions/nonEmptyString",
+      "description": "Alias for sensor."
+    },
+    "zoomRateLevelPerSec": {
+      "type": "number",
+      "description": "Normalized zoom level change per second. Positive values zoom in; negative values zoom out."
+    },
+    "zoom_rate_level_per_sec": {
+      "type": "number",
+      "description": "Alias for zoomRateLevelPerSec."
+    }
+  },
+  "examples": [
+    {
+      "type": "setSensorZoomRate",
+      "observer": "OBS-1",
+      "sensor": "Camera",
+      "zoomRateLevelPerSec": 0.5
+    }
+  ]
+}

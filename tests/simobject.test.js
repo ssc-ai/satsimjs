@@ -456,6 +456,21 @@ describe('SimObject', () => {
       expect(updateOrder).toEqual(['listener1', 'listener2', 'listener3']);
     });
 
+    test('should support silent state sampling without notifying listeners', () => {
+      class TestableSimObject extends SimObject {
+        _update(time, universe) {
+          // Do nothing for testing
+        }
+      }
+      const testObj = new TestableSimObject('TestObject', ReferenceFrame.INERTIAL);
+      const listener = { update: jest.fn() };
+
+      testObj._updateListeners.push(listener);
+      testObj.update(JulianDate.now(), {}, false, true, false);
+
+      expect(listener.update).not.toHaveBeenCalled();
+    });
+
     test('should handle listener that throws exception', () => {
       // Create a testable SimObject with overridden _update
       class TestableSimObject extends SimObject {
