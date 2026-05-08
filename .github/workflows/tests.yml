@@ -27,5 +27,28 @@ jobs:
       - name: Install dependencies
         run: npm install --no-audit --no-fund
 
+      - name: Check generated command schemas
+        run: |
+          npm run schemas:commands
+          git diff --exit-code -- schemas/command src/engine/command/schemas.js
+
+      - name: Run lint
+        run: npm run lint
+
       - name: Run tests
         run: npm test
+
+      - name: Build CDN bundle
+        if: matrix.node-version == '22'
+        run: npm run build:cdn
+
+      - name: Check package contents
+        if: matrix.node-version == '22'
+        run: npm pack --dry-run
+
+      - name: Upload CDN bundle
+        if: matrix.node-version == '22'
+        uses: actions/upload-artifact@v4
+        with:
+          name: satsim-cdn-dist
+          path: dist/

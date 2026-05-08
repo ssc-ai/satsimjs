@@ -18,6 +18,15 @@
   },
   "main": "src/index.js",
   "type": "module",
+  "files": [
+    "src/",
+    "schemas/",
+    "dist/",
+    "docs/",
+    "README.md",
+    "LICENSE",
+    "screenshot.jpg"
+  ],
   "scripts": {
     "build": "webpack --config webpack.config.js",
     "build:cdn": "webpack --config webpack.config.js --config-name cdn",
@@ -34,6 +43,18 @@
   },
   "jest": {
     "testEnvironment": "node",
+    "testPathIgnorePatterns": [
+      "<rootDir>/internal/",
+      "<rootDir>/dist/",
+      "<rootDir>/app/dist/",
+      "<rootDir>/coverage/"
+    ],
+    "modulePathIgnorePatterns": [
+      "<rootDir>/internal/",
+      "<rootDir>/dist/",
+      "<rootDir>/app/dist/",
+      "<rootDir>/coverage/"
+    ],
     "collectCoverageFrom": [
       "src/**/*.js"
     ]

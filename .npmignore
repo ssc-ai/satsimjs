@@ -10,9 +10,12 @@ webpack.config.js
 webpack.module.js
 .vscode/
 build/
+coverage/
+internal/
 node_modules/
 app/
 tests/
 doc/
 modules/
 app/dist/
+.github/
