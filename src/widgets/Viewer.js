@@ -6,6 +6,7 @@ import SensorFieldOfRegardVisualizer from "../engine/cesium/SensorFieldOfRegardV
 import SensorFieldOfViewVisualizer from "../engine/cesium/SensorFieldOfVIewVisualizer.js"
 import LaserBeam from "../engine/cesium/LaserBeam.js"
 import GeoBeltVisualizer from "../engine/cesium/GeoBeltVisualizer.js"
+import CompoundElementVisualizer from "../engine/cesium/CompoundElementVisualizer.js"
 import CallbackPositionProperty from "../engine/cesium/CallbackPositionProperty.js"
 import {
   createObjectPositionProperty,
@@ -17,7 +18,6 @@ import {
 import ElectroOpicalSensor from "../engine/objects/ElectroOpticalSensor.js"
 import CoverageGridVisualizer from "../engine/cesium/CoverageGridVisualizer.js"
 import SimObject from "../engine/objects/SimObject.js"
-import { CompoundElementVisualizer } from "../index.js"
 import Observatory from "../engine/objects/Observatory.js"
 import { getObservatorySensors } from "../engine/objects/observatoryUtils.js"
 import { getShadowStatus, ShadowState } from "../engine/geometry/shadow.js"

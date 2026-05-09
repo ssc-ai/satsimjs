@@ -1,5 +1,6 @@
 import { Color, SampledPositionProperty, JulianDate, Cartesian3, LagrangePolynomialApproximation, defined, ReferenceFrame, Matrix3, Quaternion, CallbackProperty } from 'cesium'
-import { CallbackPositionProperty, ElectroOpicalSensor } from '../../index.js'
+import CallbackPositionProperty from './CallbackPositionProperty.js'
+import ElectroOpicalSensor from '../objects/ElectroOpticalSensor.js'
 import { southEastZenithToAzEl } from '../dynamics/gimbal.js'
 import { getObservatorySensors, isSensorVisible } from '../objects/observatoryUtils.js'
 

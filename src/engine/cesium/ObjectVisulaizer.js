@@ -1,5 +1,5 @@
-import { Universe, createViewer, fetchTle, getVisibility, southEastZenithToAzEl } from "../../../src/index.js";
-import { Math as CMath, JulianDate, viewerCesiumInspectorMixin, ClockRange, ClockStep, defined, Color, Cartesian3, Viewer, CallbackProperty } from "cesium";
+import { getVisibility } from "../geometry/visibility.js";
+import { defined, Color, CallbackProperty } from "cesium";
 
 function generateSatelliteVisualizer(universe, viewer, satellite, html, showPath=false, showLabel=false, color=null) {
 
