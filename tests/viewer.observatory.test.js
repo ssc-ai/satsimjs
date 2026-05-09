@@ -166,14 +166,14 @@ jest.mock('../src/widgets/Toolbar.js', () => {
     })
 
     return {
-      addToggleButton: jest.fn((text, checked) => ({ text, checked, enable: jest.fn() })),
+      addToggleButton: jest.fn((text, checked, onchange) => ({ text, checked, onchange, enable: jest.fn() })),
       addToolbarMenu,
       addToolbarButton: jest.fn(() => ({ enable: jest.fn() })),
       addToolbarInput: jest.fn(() => ({ enable: jest.fn() })),
       addToolbarComboMenu: jest.fn(() => ({
         container: { addEventListener: jest.fn(), contains: jest.fn().mockReturnValue(false) },
-        input: { addEventListener: jest.fn(), value: '', focus: jest.fn() },
-        menu: { userOptions: [], appendChild: jest.fn(), enable: jest.fn(), selectedIndex: -1, style: {}, addEventListener: jest.fn() },
+        input: { addEventListener: jest.fn(), value: '', focus: jest.fn(), select: jest.fn() },
+        menu: { userOptions: [], appendChild: jest.fn(), enable: jest.fn(), selectedIndex: -1, style: {}, addEventListener: jest.fn(), focus: jest.fn() },
         enable: jest.fn(),
         showMenu: jest.fn(),
         hideMenu: jest.fn()
@@ -300,6 +300,11 @@ function makeViewerStub() {
     zoomTo: jest.fn(),
     boundingSphereScratch: {}
   }
+}
+
+function getEventHandler(target, eventName) {
+  const eventCall = target.addEventListener.mock.calls.find(([type]) => type === eventName)
+  return eventCall?.[1]
 }
 
 describe('Viewer observatory behavior', () => {
@@ -645,5 +650,159 @@ describe('Viewer observatory behavior', () => {
     expect(viewer.camera.flyHome).not.toHaveBeenCalled()
     expect(viewer.trackedEntity).toBe(object.visualizer)
     expect(viewer.selectedEntity).toBe(object.visualizer)
+  })
+
+  test('defers hidden object paths until explicitly enabled', () => {
+    const object = { name: 'Path-Sat' }
+    const viewer = makeViewerStub()
+    const universe = {
+      earth: {
+        update: jest.fn(),
+        worldToLocalTransform: {}
+      },
+      _trackables: [object]
+    }
+
+    mixinViewer(viewer, universe, {
+      infoBox2: false,
+      toolbar2: false,
+      showNightLayer: false,
+      showWeatherLayer: false,
+      enableObjectSearch: false
+    })
+
+    viewer.addObjectVisualizer(object, 'desc', {
+      path: { show: false, leadTime: 10, trailTime: 20, resolution: 5, width: 1 }
+    })
+
+    expect(object.visualizer.path).toBeUndefined()
+    expect(object.visualizer._satsimDeferredPathOptions).toEqual(expect.objectContaining({
+      show: false,
+      leadTime: 10,
+      trailTime: 20
+    }))
+
+    expect(viewer.setObjectPathEnabled(object, true)).toBe(true)
+    expect(object.visualizer.path).toEqual(expect.objectContaining({
+      show: true,
+      leadTime: 10,
+      trailTime: 20
+    }))
+
+    expect(viewer.setObjectPathEnabled(object, false)).toBe(true)
+    expect(object.visualizer.path.show).toBe(false)
+  })
+
+  test('path toolbar toggle creates a deferred path and missing paths do not crash toolbar creation', () => {
+    const pathObject = { name: 'Path-Target' }
+    const noPathObject = { name: 'No-Path-Target' }
+    const viewer = makeViewerStub()
+    const universe = {
+      earth: {
+        update: jest.fn(),
+        worldToLocalTransform: {}
+      },
+      _trackables: [pathObject, noPathObject]
+    }
+
+    mixinViewer(viewer, universe, {
+      infoBox2: false,
+      toolbar2: false,
+      showNightLayer: false,
+      showWeatherLayer: false,
+      enableObjectSearch: false
+    })
+
+    viewer.addObjectVisualizer(pathObject, 'desc', {
+      path: { show: false, leadTime: 10, trailTime: 10, resolution: 5, width: 1 }
+    })
+    viewer.addObjectVisualizer(noPathObject, 'desc', {})
+
+    viewer.toolbar.addToggleButton.mockClear()
+    viewer.applyDefaultToolbar(viewer.toolbar, pathObject.visualizer)
+
+    const pathToggleCall = viewer.toolbar.addToggleButton.mock.calls.find(([text]) => text === 'Path')
+    expect(pathToggleCall).toBeDefined()
+    expect(pathToggleCall[1]).toBe(false)
+
+    pathToggleCall[2](true)
+    expect(pathObject.visualizer.path.show).toBe(true)
+
+    viewer.toolbar.addToggleButton.mockClear()
+    expect(() => viewer.applyDefaultToolbar(viewer.toolbar, noPathObject.visualizer)).not.toThrow()
+    expect(viewer.toolbar.addToggleButton.mock.calls.find(([text]) => text === 'Path')).toBeUndefined()
+  })
+
+  test('tracked-object menu caps rendered results for large catalogs', () => {
+    const viewer = makeViewerStub()
+    const universe = {
+      earth: {
+        update: jest.fn(),
+        worldToLocalTransform: {}
+      },
+      _trackables: []
+    }
+
+    mixinViewer(viewer, universe, {
+      infoBox2: false,
+      toolbar2: false,
+      showNightLayer: false,
+      showWeatherLayer: false,
+      enableObjectSearch: false
+    })
+
+    for (let i = 0; i < 105; i++) {
+      viewer.addObjectVisualizer({ name: `Target-${String(i).padStart(3, '0')}` }, 'desc', {})
+    }
+
+    const trackedObjectCombo = viewer.toolbar.addToolbarComboMenu.mock.results[0].value
+    expect(trackedObjectCombo.menu.userOptions).toHaveLength(100)
+    expect(trackedObjectCombo.menu.userOptions[0].text).toBe('Target-000')
+    expect(trackedObjectCombo.menu.userOptions[99].text).toBe('Target-099')
+
+    const statusOption = trackedObjectCombo.menu.appendChild.mock.calls.at(-1)[0]
+    expect(statusOption.textContent).toBe('Showing first 100 of 105 matches')
+    expect(statusOption.disabled).toBe(true)
+  })
+
+  test('tracked-object search selects the current target name on focus and filters on new input', () => {
+    const viewer = makeViewerStub()
+    const universe = {
+      earth: {
+        update: jest.fn(),
+        worldToLocalTransform: {}
+      },
+      _trackables: []
+    }
+
+    mixinViewer(viewer, universe, {
+      infoBox2: false,
+      toolbar2: false,
+      showNightLayer: false,
+      showWeatherLayer: false,
+      enableObjectSearch: false
+    })
+
+    viewer.addObjectVisualizer({ name: 'Alpha-Target' }, 'desc', {})
+    viewer.addObjectVisualizer({ name: 'Beta-Target' }, 'desc', {})
+
+    const trackedObjectCombo = viewer.toolbar.addToolbarComboMenu.mock.results[0].value
+    trackedObjectCombo.menu.userOptions[0].onselect()
+
+    const focusHandler = getEventHandler(trackedObjectCombo.input, 'focus')
+    const inputHandler = getEventHandler(trackedObjectCombo.input, 'input')
+
+    trackedObjectCombo.input.select.mockClear()
+    focusHandler()
+    expect(trackedObjectCombo.input.select).toHaveBeenCalledTimes(1)
+
+    trackedObjectCombo.input.value = 'Beta'
+    inputHandler()
+    expect(trackedObjectCombo.menu.userOptions).toHaveLength(1)
+    expect(trackedObjectCombo.menu.userOptions[0].text).toBe('Beta-Target')
+
+    trackedObjectCombo.input.select.mockClear()
+    focusHandler()
+    expect(trackedObjectCombo.input.select).not.toHaveBeenCalled()
   })
 })

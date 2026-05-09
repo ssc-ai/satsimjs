@@ -588,7 +588,10 @@ function mixinViewer(viewer, universe, options) {
   // Viewer Mixins
   ///////////////////
 
+  const trackedObjectMenuResultLimit = 100
   const trackedObjectEntries = []
+  const trackedObjectEntryObjects = new WeakSet()
+  let trackedObjectMenuRebuildPending = false
   let trackedObjectMenuSelectedObject = undefined
 
   let trackedObjectCombo = undefined
@@ -596,15 +599,6 @@ function mixinViewer(viewer, universe, options) {
   function isTrackedObjectEntryVisible(entry, filterText) {
     if (!filterText) return true
     return entry.nameLower.indexOf(filterText) !== -1
-  }
-
-  function getTrackedObjectEntryIndex(simObject) {
-    for (let i = 0; i < trackedObjectEntries.length; i++) {
-      if (trackedObjectEntries[i].simObject === simObject) {
-        return i
-      }
-    }
-    return -1
   }
 
   function getTrackedObjectEnabledState() {
@@ -622,41 +616,71 @@ function mixinViewer(viewer, universe, options) {
     trackedObjectCombo.hideMenu()
   }
 
+  function appendTrackedObjectMenuMessage(text) {
+    const messageElement = document.createElement(trackedObjectCombo.menu._satsimComboMenu ? "div" : "option")
+    messageElement.textContent = text
+    messageElement.disabled = true
+
+    if (trackedObjectCombo.menu._satsimComboMenu) {
+      messageElement.setAttribute("role", "presentation")
+      messageElement.style.padding = "2px 16px"
+      messageElement.style.lineHeight = "18px"
+      messageElement.style.whiteSpace = "nowrap"
+      messageElement.style.color = "rgba(255, 255, 255, 0.55)"
+      messageElement.style.background = "#000"
+    }
+
+    trackedObjectCombo.menu.appendChild(messageElement)
+  }
+
+  function selectTrackedObjectInputIfCurrentSelection() {
+    if (!defined(trackedObjectCombo) || !defined(trackedObjectMenuSelectedObject)) {
+      return
+    }
+
+    const selectedName = String(trackedObjectMenuSelectedObject.name ?? '')
+    if (
+      trackedObjectCombo.input.value === selectedName &&
+      typeof trackedObjectCombo.input.select === "function"
+    ) {
+      trackedObjectCombo.input.select()
+    }
+  }
+
   function rebuildTrackedObjectMenu() {
+    trackedObjectMenuRebuildPending = false
     if (!defined(trackedObjectCombo)) {
       return
     }
 
     const filterText = String(trackedObjectCombo.input.value ?? '').trim().toLowerCase()
-    const matchingEntries = []
+    let matchCount = 0
+    const options = []
     for (let i = 0; i < trackedObjectEntries.length; i++) {
       const entry = trackedObjectEntries[i]
       if (isTrackedObjectEntryVisible(entry, filterText)) {
-        matchingEntries.push(entry)
-      }
-    }
-
-    const options = []
-    for (let i = 0; i < matchingEntries.length; i++) {
-      const entry = matchingEntries[i]
-      options.push({
-        text: entry.name,
-        simObjectRef: entry.simObject,
-        onselect: function () {
-          focusAndTrackObject(entry.simObject)
+        matchCount++
+        if (options.length < trackedObjectMenuResultLimit) {
+          options.push({
+            text: entry.name,
+            simObjectRef: entry.simObject,
+            onselect: function () {
+              focusAndTrackObject(entry.simObject)
+            }
+          })
         }
-      })
+      }
     }
 
     trackedObjectCombo.menu.innerHTML = ''
     trackedObjectCombo.menu.userOptions = []
     if (options.length > 0) {
       toolbar.addToolbarMenu(options, trackedObjectCombo.menu)
+      if (matchCount > options.length) {
+        appendTrackedObjectMenuMessage(`Showing first ${options.length} of ${matchCount} matches`)
+      }
     } else {
-      const emptyOption = document.createElement("option")
-      emptyOption.textContent = "No matches"
-      emptyOption.disabled = true
-      trackedObjectCombo.menu.appendChild(emptyOption)
+      appendTrackedObjectMenuMessage("No matches")
     }
 
     let selectedIndex = -1
@@ -666,13 +690,27 @@ function mixinViewer(viewer, universe, options) {
         break
       }
     }
-    trackedObjectCombo.menu.size = Math.max(2, Math.min(8, options.length || 1))
+    const renderedRows = options.length + (matchCount > options.length ? 1 : 0)
+    trackedObjectCombo.menu.size = Math.max(2, Math.min(8, renderedRows || 1))
     trackedObjectCombo.menu.selectedIndex = selectedIndex
 
     const enabled = getTrackedObjectEnabledState()
     trackedObjectCombo.enable(enabled)
     if (!enabled) {
       hideTrackedObjectMenu()
+    }
+  }
+
+  function scheduleTrackedObjectMenuRebuild() {
+    if (trackedObjectMenuRebuildPending) {
+      return
+    }
+
+    trackedObjectMenuRebuildPending = true
+    if (typeof globalThis.requestAnimationFrame === "function") {
+      globalThis.requestAnimationFrame(rebuildTrackedObjectMenu)
+    } else {
+      rebuildTrackedObjectMenu()
     }
   }
 
@@ -714,16 +752,64 @@ function mixinViewer(viewer, universe, options) {
   }
 
   function addTrackedObjectMenuEntry(simObject) {
-    if (!defined(simObject) || !defined(simObject.visualizer) || getTrackedObjectEntryIndex(simObject) !== -1) {
+    if (!defined(simObject) || !defined(simObject.visualizer) || trackedObjectEntryObjects.has(simObject)) {
       return
     }
 
+    trackedObjectEntryObjects.add(simObject)
     trackedObjectEntries.push({
       name: String(simObject.name ?? ''),
       nameLower: String(simObject.name ?? '').toLowerCase(),
       simObject
     })
-    rebuildTrackedObjectMenu()
+    scheduleTrackedObjectMenuRebuild()
+  }
+
+  function getObjectPathShowValue(entity) {
+    if (!defined(entity?.path)) {
+      return false
+    }
+
+    const show = entity.path.show
+    if (!defined(show)) {
+      return true
+    }
+    if (typeof show.getValue === "function") {
+      return !!show.getValue(viewer.clock.currentTime)
+    }
+    return !!show
+  }
+
+  function hasObjectPathCapability(simObject) {
+    const entity = simObject?.visualizer
+    return defined(entity) && (defined(entity.path) || defined(entity._satsimDeferredPathOptions))
+  }
+
+  viewer.setObjectPathEnabled = function (simObject, show) {
+    const entity = simObject?.visualizer
+    if (!defined(entity)) {
+      return false
+    }
+
+    if (!defined(entity.path)) {
+      if (!defined(entity._satsimDeferredPathOptions)) {
+        return false
+      }
+
+      if (!show) {
+        entity._satsimDeferredPathOptions.show = false
+        return true
+      }
+
+      entity.path = {
+        ...entity._satsimDeferredPathOptions,
+        show: true
+      }
+      return true
+    }
+
+    entity.path.show = !!show
+    return true
   }
 
   /**
@@ -959,6 +1045,13 @@ function mixinViewer(viewer, universe, options) {
     const point = visualizerOptions.point
     delete visualizerOptions.point
 
+    const deferredPathOptions = visualizerOptions.path?.show === false
+      ? { ...visualizerOptions.path }
+      : undefined
+    if (defined(deferredPathOptions)) {
+      delete visualizerOptions.path
+    }
+
     const basePosition = isStatic ? object.position : createObjectPositionProperty(object, universe, viewer)
 
     // create base entity which uses the traditional object position callback
@@ -976,6 +1069,10 @@ function mixinViewer(viewer, universe, options) {
       allowPicking: true
     }
     const entity = viewer.entities.add(Object.assign(base, visualizerOptions))
+    if (defined(deferredPathOptions)) {
+      entity._satsimDeferredPathOptions = deferredPathOptions
+    }
+    entity._satsimViewer = viewer
     object.visualizer = entity
     addTrackedObjectMenuEntry(object)
 
@@ -1151,9 +1248,11 @@ function mixinViewer(viewer, universe, options) {
           });
         });
       } else if (universe._trackables.includes(obj)) {
-        toolbar.addToggleButton('Path', obj.visualizer.path.show.getValue(), (checked) => {
-          obj.visualizer.path.show = checked
-        });
+        if (hasObjectPathCapability(obj)) {
+          toolbar.addToggleButton('Path', getObjectPathShowValue(obj.visualizer), (checked) => {
+            viewer.setObjectPathEnabled(obj, checked)
+          });
+        }
         const labelOn = obj.visualizer.label2?.show
         toolbar.addToggleButton('Label', labelOn, (checked) => {
 
@@ -1493,14 +1592,16 @@ function mixinViewer(viewer, universe, options) {
   toolbar.addSeparator();
   trackedObjectCombo = toolbar.addToolbarComboMenu('Track Object...')
   trackedObjectCombo.input.addEventListener('focus', function () {
+    selectTrackedObjectInputIfCurrentSelection()
     showTrackedObjectMenu()
   })
   trackedObjectCombo.input.addEventListener('click', function () {
+    selectTrackedObjectInputIfCurrentSelection()
     showTrackedObjectMenu()
   })
   trackedObjectCombo.input.addEventListener('input', function () {
     trackedObjectMenuSelectedObject = undefined
-    rebuildTrackedObjectMenu()
+    scheduleTrackedObjectMenuRebuild()
     showTrackedObjectMenu()
   })
   trackedObjectCombo.input.addEventListener('keydown', function (ev) {

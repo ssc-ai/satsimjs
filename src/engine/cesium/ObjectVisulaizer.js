@@ -51,9 +51,9 @@ function generateSatelliteVisualizer(universe, viewer, satellite, html, showPath
   }, false)
 
   if(!defined(color))
-    color = new Color.fromRandom({alpha: 1.0});
+    color = Color.fromRandom({alpha: 1.0});
 
-  viewer.addObjectVisualizer(satellite, description, {
+  const visualizerOptions = {
     path: {
       show: showPath,
       leadTime: satellite.period / 2,
@@ -74,7 +74,9 @@ function generateSatelliteVisualizer(universe, viewer, satellite, html, showPath
       font: '12px sans-serif',
       fillColor: color,
     } : undefined
-  });
+  };
+
+  viewer.addObjectVisualizer(satellite, description, visualizerOptions);
 }
 
 function generateGroundObservatoryVisualizer(universe, viewer, o) {
