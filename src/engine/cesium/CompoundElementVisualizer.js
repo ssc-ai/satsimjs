@@ -42,6 +42,28 @@ class CompountElementVisualizer {
       entity.outlineColor = this._color.withAlpha(this._outlineAlpha)
     })
   }
+
+  get materialAlpha() {
+    return this._materialAlpha
+  }
+
+  set materialAlpha(value) {
+    this._materialAlpha = value
+    this._entities.forEach(entity => {
+      entity.material = this._color.withAlpha(this._materialAlpha)
+    })
+  }
+
+  get outlineAlpha() {
+    return this._outlineAlpha
+  }
+
+  set outlineAlpha(value) {
+    this._outlineAlpha = value
+    this._entities.forEach(entity => {
+      entity.outlineColor = this._color.withAlpha(this._outlineAlpha)
+    })
+  }
   
 }
 
