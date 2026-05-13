@@ -72,6 +72,9 @@ jest.mock('cesium', () => {
   }
 
   return {
+    ArcType: {
+      NONE: 'NONE'
+    },
     Color: {
       GREEN: makeColor('green'),
       GRAY: makeColor('gray')
@@ -136,13 +139,14 @@ describe('SensorFieldOfViewVisualizer', () => {
 
     const entity = viewer.entities.add.mock.calls[0][0]
     const ellipsoid = entity.ellipsoid
-    const initialMinimumClock = ellipsoid.minimumClock.getValue()
+    const initialMaximumClock = ellipsoid.maximumClock.getValue()
     const initialMaximumCone = ellipsoid.maximumCone.getValue()
 
     sensor.x_fov = 0.05
     sensor.y_fov = 0.05
 
-    expect(Math.abs(ellipsoid.minimumClock.getValue())).toBeLessThan(Math.abs(initialMinimumClock))
+    expect(ellipsoid.minimumClock.getValue()).toBeCloseTo(0.001 * Math.PI / 180)
+    expect(ellipsoid.maximumClock.getValue()).toBeLessThan(initialMaximumClock)
     expect(ellipsoid.maximumCone.getValue()).toBeLessThan(initialMaximumCone)
   })
 
@@ -238,8 +242,61 @@ describe('SensorFieldOfViewVisualizer', () => {
     expect(typeof ellipsoid.maximumCone.getValue).toBe('undefined')
     expect(ellipsoid.slicePartitions).toBe(8)
     expect(ellipsoid.stackPartitions).toBe(48)
+    expect(ellipsoid.innerRadii.x).toBe(0.1)
+    expect(ellipsoid.minimumClock).toBeCloseTo(0.001 * Math.PI / 180)
+    expect(ellipsoid.maximumClock).toBeCloseTo(20.001 * Math.PI / 180)
     expect(ellipsoid.minimumCone).toBeCloseTo(Math.PI / 6)
     expect(ellipsoid.maximumCone).toBeCloseTo(5 * Math.PI / 6)
+  })
+
+  test('applies seam-safe clock geometry to dynamic sensor orientations', () => {
+    const viewer = {
+      entities: {
+        add: jest.fn((value) => value)
+      }
+    }
+    const universe = {
+      earth: {
+        update: jest.fn()
+      }
+    }
+    const gimbal = {
+      range: 1000,
+      maxRange: 45000000,
+      update: jest.fn(),
+      trackObject: null
+    }
+    const sensor = {
+      name: 'Dynamic Survey Sensor',
+      x_fov: 20,
+      y_fov: 120,
+      maxRange: 3000000,
+      canZoom: true,
+      zoom: {
+        max_x_fov: 20,
+        max_y_fov: 120
+      },
+      update: jest.fn(),
+      transformVectorTo: jest.fn((_target, vector) => vector)
+    }
+
+    new SensorFieldOfViewVisualizer(viewer, {}, gimbal, sensor, universe)
+
+    const entity = viewer.entities.add.mock.calls[0][0]
+    const ellipsoid = entity.ellipsoid
+    expect(ellipsoid.minimumClock.getValue()).toBeCloseTo(0.001 * Math.PI / 180)
+    expect(ellipsoid.maximumClock.getValue()).toBeCloseTo(20.001 * Math.PI / 180)
+    expect(entity.orientation.getValue('t0').matrix[4]).toBeCloseTo(Math.cos(10.001 * Math.PI / 180))
+
+    const outline = viewer.entities.add.mock.calls[1][0].polyline
+    expect(ellipsoid.outline).toBe(false)
+    expect(outline.positions.getValue).toBeInstanceOf(Function)
+
+    sensor.x_fov = 10
+
+    expect(ellipsoid.maximumClock.getValue()).toBeCloseTo(10.001 * Math.PI / 180)
+    expect(entity.orientation.getValue('t1').matrix[4]).toBeCloseTo(Math.cos(5.001 * Math.PI / 180))
+    expect(createObjectOrientationProperty).not.toHaveBeenCalledWith(sensor, universe)
   })
 
   test('uses static-fixed render mode for fixed survey sensors', () => {
@@ -274,20 +331,70 @@ describe('SensorFieldOfViewVisualizer', () => {
       transformVectorTo: jest.fn((_target, vector) => vector)
     }
 
-    new SensorFieldOfViewVisualizer(viewer, {}, gimbal, sensor, universe)
+    const visualizer = new SensorFieldOfViewVisualizer(viewer, {}, gimbal, sensor, universe)
 
+    expect(viewer.entities.add).toHaveBeenCalledTimes(2)
     const entity = viewer.entities.add.mock.calls[0][0]
+    const outlineEntity = viewer.entities.add.mock.calls[1][0]
     const ellipsoid = entity.ellipsoid
+
     expect(typeof ellipsoid.radii.getValue).toBe('undefined')
     expect(typeof ellipsoid.minimumClock.getValue).toBe('undefined')
     expect(typeof ellipsoid.maximumCone.getValue).toBe('undefined')
     expect(ellipsoid.radii.x).toBe(3000000)
+    expect(ellipsoid.innerRadii.x).toBe(300)
     expect(ellipsoid.slicePartitions).toBe(8)
     expect(ellipsoid.stackPartitions).toBe(48)
+    expect(ellipsoid.outline).toBe(false)
+    expect(ellipsoid.minimumCone).toBeCloseTo(Math.PI / 6)
+    expect(ellipsoid.maximumCone).toBeCloseTo(5 * Math.PI / 6)
+    expect(ellipsoid.minimumClock).toBeCloseTo(0.001 * Math.PI / 180)
+    expect(ellipsoid.maximumClock).toBeCloseTo(20.001 * Math.PI / 180)
+    expect(outlineEntity.polyline.positions.length).toBeGreaterThan(0)
+    expect(outlineEntity.polyline.arcType).toBe('NONE')
     expect(entity.position.referenceFrame).toBe('FIXED')
     expect(entity.position.value).toEqual({ x: 1, y: 2, z: 3 })
     expect(typeof entity.orientation.getValue).toBe('function')
+    expect(entity.orientation.getValue().matrix[4]).toBeCloseTo(Math.cos(10.001 * Math.PI / 180))
+
+    visualizer.fill = false
+    expect(ellipsoid.fill).toBe(false)
+    visualizer.outline = false
+    expect(outlineEntity.polyline.show).toBe(false)
     expect(createObjectPositionProperty).not.toHaveBeenCalledWith(sensor, universe, viewer)
     expect(createObjectOrientationProperty).not.toHaveBeenCalledWith(sensor, universe)
+  })
+
+  test('keeps static-fixed inner radii smaller than short ranges', () => {
+    const viewer = {
+      clock: {
+        currentTime: 't0'
+      },
+      entities: {
+        add: jest.fn((value) => value)
+      }
+    }
+    const universe = {
+      earth: {
+        update: jest.fn()
+      }
+    }
+    const sensor = {
+      name: 'Short Range Static Sensor',
+      x_fov: 20,
+      y_fov: 20,
+      maxRange: 1,
+      fieldOfViewRenderMode: 'static-fixed',
+      position: new Cartesian3(1, 2, 3),
+      update: jest.fn(),
+      transformVectorTo: jest.fn((_target, vector) => vector)
+    }
+
+    new SensorFieldOfViewVisualizer(viewer, {}, {}, sensor, universe)
+
+    viewer.entities.add.mock.calls.filter(([entity]) => entity.ellipsoid).forEach(([entity]) => {
+      expect(entity.ellipsoid.innerRadii.x).toBeLessThan(entity.ellipsoid.radii.x)
+      expect(entity.ellipsoid.innerRadii.x).toBe(0.5)
+    })
   })
 })
