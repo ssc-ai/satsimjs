@@ -96,6 +96,30 @@ npm install
 npm run dev
 ```
 
+## Maintenance
+
+Clean generated build output before rebuilding or preparing a release:
+
+```sh
+npm run clean
+```
+
+`npm run clean` removes `dist/` and `app/dist/`.
+
+To bump the package version, use `npm version` so `package.json` and
+`package-lock.json` stay in sync. For example:
+
+```sh
+npm version 0.15.2 --no-git-tag-version
+npm test
+npm run build
+```
+
+Use `npm version patch --no-git-tag-version` for the next patch version, or
+replace `patch` with `minor` or `major` as needed. Commit the resulting
+`package.json`, `package-lock.json`, generated build output if required for the
+release, and any source changes together.
+
 ## Optional Runtime Layer
 
 SatSim also includes an optional runtime foundation for applications that need
