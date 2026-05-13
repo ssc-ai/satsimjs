@@ -1,7 +1,7 @@
 import {
   Color,
+  CallbackProperty,
   Cartesian3,
-  ColorMaterialProperty,
   ConstantPositionProperty,
   ConstantProperty,
   Math as CMath,
@@ -28,15 +28,62 @@ function resolveFovPartitions(fovDeg) {
   )
 }
 
-function resolveSensorRange(sensor, gimbal) {
-  const range = Number(sensor?.maxRange ?? gimbal?.maxRange ?? gimbal?.range)
-  return Number.isFinite(range) && range > 0 ? range : 1.0
+function positiveNumber(...values) {
+  for (let i = 0; i < values.length; i++) {
+    const value = Number(values[i])
+    if (Number.isFinite(value) && value > 0) {
+      return value
+    }
+  }
+  return 1.0
 }
 
-function canUseStaticFixedPose(sensor, gimbal) {
-  return sensor?.referenceFrame === ReferenceFrame.FIXED &&
-    gimbal?.trackMode === 'fixed' &&
-    !defined(gimbal.trackObject)
+function isTrackingGimbal(gimbal) {
+  return defined(gimbal?.trackObject)
+}
+
+function resolveSensorRange(sensor, gimbal) {
+  return isTrackingGimbal(gimbal)
+    ? positiveNumber(gimbal?.range, sensor?.maxRange, gimbal?.maxRange)
+    : positiveNumber(sensor?.maxRange, gimbal?.maxRange, gimbal?.range)
+}
+
+function maxRenderableFov(sensor, axis) {
+  const fov = Number(sensor?.[axis])
+  const zoomKey = axis === 'x_fov' ? 'max_x_fov' : 'max_y_fov'
+  const zoomFov = Number(sensor?.zoom?.[zoomKey])
+  return Math.max(
+    Number.isFinite(fov) ? Math.abs(fov) : 0,
+    Number.isFinite(zoomFov) ? Math.abs(zoomFov) : 0
+  )
+}
+
+function shouldUseDynamicFov(sensor) {
+  return sensor?.canZoom === true
+}
+
+function shouldUseStaticFixedRenderMode(sensor) {
+  return sensor?.fieldOfViewRenderMode === 'static-fixed'
+}
+
+function resolveColor(color, fallback) {
+  return defined(color) ? color : fallback
+}
+
+function rangeToRadii(range, result) {
+  const radii = defined(result) ? result : new Cartesian3()
+  radii.x = range
+  radii.y = range
+  radii.z = range
+  return radii
+}
+
+function createRangeProperty(sensor, gimbal, universe, updateTrackingState) {
+  return new CallbackProperty((time, result) => {
+    gimbal?.update?.(time, universe)
+    updateTrackingState()
+    return rangeToRadii(resolveSensorRange(sensor, gimbal), result)
+  }, false)
 }
 
 function createStaticFixedPositionProperty(sensor, universe, viewer) {
@@ -56,49 +103,51 @@ function createStaticFixedOrientationProperty(sensor, universe, viewer) {
   return new ConstantProperty(Quaternion.fromRotationMatrix(matrix, new Quaternion()))
 }
 
-function cloneMutableColor(color, fallback, result = new Color()) {
-  return Color.clone(defined(color) ? color : fallback, result)
+function createClockProperty(sensor, sign) {
+  const getValue = () => CMath.toRadians(sign * Number(sensor.x_fov) / 2)
+  return shouldUseDynamicFov(sensor)
+    ? new CallbackProperty(getValue, false)
+    : getValue()
 }
 
-function cloneWithAlpha(color, alpha, result = new Color()) {
-  Color.clone(color, result)
-  result.alpha = alpha
-  return result
+function createConeProperty(sensor, sign) {
+  const getValue = () => CMath.toRadians(90 + (sign * Number(sensor.y_fov) / 2))
+  return shouldUseDynamicFov(sensor)
+    ? new CallbackProperty(getValue, false)
+    : getValue()
 }
 
 class SensorFieldOfViewVisualizer extends CompountElementVisualizer {
   constructor(viewer, site, gimbal, sensor, universe, color, inactiveColor) {
     super(color ?? Color.GREEN, 0.25, 0.5)
-    this._color = cloneMutableColor(color, Color.GREEN)
+    this._color = resolveColor(color, Color.GREEN)
     this._gimbal = gimbal
-    this._inactiveColor = cloneMutableColor(inactiveColor, Color.GRAY)
+    this._inactiveColor = resolveColor(inactiveColor, Color.GRAY)
     this._lastTrackingState = undefined
     this._fovEllipsoid = undefined
-    this._materialColor = cloneWithAlpha(this._color, this._materialAlpha)
-    this._outlineColor = cloneWithAlpha(this._color, this._outlineAlpha)
-    this._materialColorProperty = new ConstantProperty(this._materialColor)
-    this._outlineColorProperty = new ConstantProperty(this._outlineColor)
-    const slicePartitions = resolveFovPartitions(sensor.x_fov)
-    const stackPartitions = resolveFovPartitions(sensor.y_fov)
-    const range = resolveSensorRange(sensor, gimbal)
-    const staticPose = canUseStaticFixedPose(sensor, gimbal)
+    const slicePartitions = resolveFovPartitions(maxRenderableFov(sensor, 'x_fov'))
+    const stackPartitions = resolveFovPartitions(maxRenderableFov(sensor, 'y_fov'))
+    const useStaticFixedRenderMode = shouldUseStaticFixedRenderMode(sensor)
+    const radii = useStaticFixedRenderMode
+      ? rangeToRadii(positiveNumber(sensor?.maxRange, gimbal?.maxRange, gimbal?.range))
+      : createRangeProperty(sensor, gimbal, universe, () => this._applyTrackingColor())
     const e = viewer.entities.add({
       name: sensor.name + ' Field of View',
-      position: staticPose
+      position: useStaticFixedRenderMode
         ? createStaticFixedPositionProperty(sensor, universe, viewer)
         : createObjectPositionProperty(sensor, universe, viewer),
-      orientation: staticPose
+      orientation: useStaticFixedRenderMode
         ? createStaticFixedOrientationProperty(sensor, universe, viewer)
         : createObjectOrientationProperty(sensor, universe),
       ellipsoid: {
-        radii: new Cartesian3(range, range, range),
+        radii,
         innerRadii: new Cartesian3(CMath.EPSILON1, CMath.EPSILON1, CMath.EPSILON1), // Cesium will crash if innerRadii is small and radii is large
-        minimumClock: CMath.toRadians(-sensor.x_fov / 2),
-        maximumClock: CMath.toRadians(sensor.x_fov / 2),
-        minimumCone: CMath.toRadians(90 - sensor.y_fov / 2),
-        maximumCone: CMath.toRadians(90 + sensor.y_fov / 2),
-        material: new ColorMaterialProperty(this._materialColorProperty),
-        outlineColor: this._outlineColorProperty,
+        minimumClock: useStaticFixedRenderMode ? CMath.toRadians(-Number(sensor.x_fov) / 2) : createClockProperty(sensor, -1),
+        maximumClock: useStaticFixedRenderMode ? CMath.toRadians(Number(sensor.x_fov) / 2) : createClockProperty(sensor, 1),
+        minimumCone: useStaticFixedRenderMode ? CMath.toRadians(90 - (Number(sensor.y_fov) / 2)) : createConeProperty(sensor, -1),
+        maximumCone: useStaticFixedRenderMode ? CMath.toRadians(90 + (Number(sensor.y_fov) / 2)) : createConeProperty(sensor, 1),
+        material: this._color.withAlpha(this._materialAlpha),
+        outlineColor: this._color.withAlpha(this._outlineAlpha),
         fill: true,
         outline: true,
         slicePartitions,
@@ -118,18 +167,30 @@ class SensorFieldOfViewVisualizer extends CompountElementVisualizer {
   }
 
   set inactiveColor(value) {
-    cloneMutableColor(value, Color.GRAY, this._inactiveColor)
+    this._inactiveColor = resolveColor(value, Color.GRAY)
     this._applyTrackingColor(true)
   }
 
+  get color() {
+    return this._color
+  }
+
   set color(value) {
-    cloneMutableColor(value, Color.GREEN, this._color)
+    this._color = resolveColor(value, Color.GREEN)
     this._applyTrackingColor(true)
+  }
+
+  get materialAlpha() {
+    return this._materialAlpha
   }
 
   set materialAlpha(value) {
     this._materialAlpha = value
     this._applyTrackingColor(true)
+  }
+
+  get outlineAlpha() {
+    return this._outlineAlpha
   }
 
   set outlineAlpha(value) {
@@ -156,18 +217,13 @@ class SensorFieldOfViewVisualizer extends CompountElementVisualizer {
       return
     }
     const baseColor = isTracking ? this._color : this._inactiveColor
-    cloneWithAlpha(baseColor, this._materialAlpha, this._materialColor)
-    cloneWithAlpha(baseColor, this._outlineAlpha, this._outlineColor)
-    this._materialColorProperty.setValue(this._materialColor)
-    this._outlineColorProperty.setValue(this._outlineColor)
+    this._fovEllipsoid.material = baseColor.withAlpha(this._materialAlpha)
+    this._fovEllipsoid.outlineColor = baseColor.withAlpha(this._outlineAlpha)
     this._lastTrackingState = isTracking
   }
 
   _isTracking() {
-    if (!defined(this._gimbal)) {
-      return false
-    }
-    return defined(this._gimbal.trackObject)
+    return isTrackingGimbal(this._gimbal)
   }
 }
 
